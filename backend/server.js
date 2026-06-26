@@ -643,7 +643,15 @@ setInterval(performBackup, 14400000);
 // Also run a backup 10 seconds after boot to ensure it works
 setTimeout(performBackup, 10000);
 
-app.listen(PORT, () => {
+// --- SERVE FRONTEND IN PRODUCTION ---
+if (process.env.NODE_ENV === 'production') {
+    app.use(express.static(path.join(__dirname, '../frontend/dist')));
+    app.get('*', (req, res) => {
+        res.sendFile(path.resolve(__dirname, '../frontend/dist', 'index.html'));
+    });
+}
+
+app.listen(PORT, '0.0.0.0', () => {
     const localIp = getLocalIp();
     console.log(`=============================================`);
     console.log(` Humjoli Safa ERP Backend Started`);
