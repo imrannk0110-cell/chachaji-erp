@@ -1,0 +1,17 @@
+{
+  "short_name": "Humjoli ERP",
+  "name": "Humjoli Safa ERP & CRM",
+  "icons": [
+    {
+      "src": "/humjolilogo.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0f111a",
+  "theme_color": "#d4af37",
+  "display": "standalone",
+  "orientation": "portrait"
+}
