@@ -16,7 +16,7 @@ export default function Billing() {
   const [globalDiscount, setGlobalDiscount] = useState(0);
   const [completedSale, setCompletedSale] = useState(null);
   
-  const [localIpUrl, setLocalIpUrl] = useState('http://localhost:3000');
+  const [localIpUrl, setLocalIpUrl] = useState('');
 
   useEffect(() => {
     fetch('/api/products').then(r => r.json()).then(setProducts);
@@ -26,7 +26,7 @@ export default function Billing() {
       .then(r => r.json())
       .then(data => {
         if (data.localIp) {
-          setLocalIpUrl(`http://${data.localIp}:${data.port || 3000}`);
+          setLocalIpUrl(`http://${data.localIp}:${data.port || 5000}`);
         }
       })
       .catch(err => console.error('Error fetching local IP in billing:', err));
@@ -57,12 +57,12 @@ export default function Billing() {
         product_id: product.id, 
         name: product.name,
         sku: product.sku,
-        unit_price: product.selling_price, 
-        purchase_price: product.purchase_price, // Needed for real-time margin checking
+        unit_price: product.retail_price, // Default checkout price
+        purchase_price: product.manufacturing_cost, // Needed for real-time margin checking
         quantity: 1, 
         flat_discount: 0,
-        uom: product.uom,
-        current_stock: product.current_stock
+        uom: 'pcs',
+        current_stock: product.total_stock
       }]);
     }
   };
@@ -91,7 +91,7 @@ export default function Billing() {
 
     let customer_id = null;
     
-    // Register/update customer if coordinates provided
+    // Register/update customer if details provided
     if (customerName && customerPhone) {
       const custRes = await fetch('/api/customers', {
         method: 'POST',
@@ -164,22 +164,22 @@ export default function Billing() {
     const doc = new jsPDF();
     
     // Theme Colors
-    const primaryColor = [11, 12, 16]; // Jet black
-    const accentColor = [197, 160, 89]; // Gold #C5A059
+    const primaryColor = [224, 90, 16]; // Copper Orange
+    const accentColor = [224, 90, 16];
     
     // Header Branding
-    doc.setFillColor(11, 12, 16);
+    doc.setFillColor(224, 90, 16);
     doc.rect(0, 0, 210, 35, 'F'); // Dark background banner
     
     doc.setFont("helvetica", "bold");
     doc.setFontSize(26);
-    doc.setTextColor(197, 160, 89);
-    doc.text("HUMJOLI ETHNIC", 20, 22);
+    doc.setTextColor(255, 255, 255);
+    doc.text("CHACHAJI UDYOG", 20, 22);
     
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
-    doc.setTextColor(255, 255, 255);
-    doc.text("PREMIUM MEN'S WEAR, SAFA & CUSTOM TAILORING", 20, 29);
+    doc.setTextColor(245, 245, 245);
+    doc.text("PREMIUM GAS STOVES, BURNERS & COMMERCIAL BHATTI MANUFACTURER", 20, 29);
     
     // Add Local network sync QR Code to top right
     try {
@@ -198,7 +198,7 @@ export default function Billing() {
     // Invoice Metadata
     doc.setFontSize(11);
     doc.setTextColor(40, 40, 40);
-    doc.text(`Invoice Reference: HS-INV-${completedSale.sale_id}`, 20, 50);
+    doc.text(`Invoice Reference: CU-INV-${completedSale.sale_id}`, 20, 50);
     doc.text(`Billing Date: ${new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}`, 130, 50);
     
     // Horizontal divider
@@ -273,7 +273,7 @@ export default function Billing() {
     
     y += 8;
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(197, 160, 89); // Gold
+    doc.setTextColor(224, 90, 16); // Copper
     doc.setFontSize(14);
     doc.text("GRAND TOTAL:", 125, y);
     doc.text(`Rs ${completedSale.netTotal.toFixed(2)}`, 175, y);
@@ -283,18 +283,18 @@ export default function Billing() {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.setTextColor(120, 120, 120);
-    doc.text("Terms: Custom tailored apparel cannot be returned or refunded.", 105, y, null, null, "center");
+    doc.text("Terms: 1 Year Warranty on brass burners. No returns on customized stoves.", 105, y, null, null, "center");
     
     y += 5;
     doc.setFont("helvetica", "bold");
-    doc.text("THANK YOU FOR SHOPPING AT HUMJOLI ETHNIC!", 105, y, null, null, "center");
+    doc.text("THANK YOU FOR CHOOSING CHACHAJI UDYOG!", 105, y, null, null, "center");
     
-    doc.save(`Invoice_HS_${completedSale.sale_id}.pdf`);
+    doc.save(`Invoice_CU_${completedSale.sale_id}.pdf`);
   };
 
   const sendWhatsApp = () => {
     if (!completedSale || !completedSale.customerPhone) return;
-    const text = `Hello ${completedSale.customerName || 'Customer'},\n\nThank you for purchasing from Humjoli Ethnic! Your invoice has been generated.\n\nTotal Amount: ₹${completedSale.netTotal.toFixed(2)}.\n\nWe look forward to serving you again.`;
+    const text = `Hello ${completedSale.customerName || 'Customer'},\n\nThank you for choosing Chachaji Udyog! Your invoice has been generated.\n\nTotal Amount: ₹${completedSale.netTotal.toFixed(2)}.\n\nWe look forward to serving you again.`;
     const url = `https://wa.me/91${completedSale.customerPhone}?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   };
@@ -317,7 +317,7 @@ export default function Billing() {
           <div>
             <h2 className="text-2xl font-bold flex items-center gap-2" style={{ letterSpacing: '-0.02em' }}>
               <ShoppingCart size={22} style={{ color: 'var(--accent-primary)' }} />
-              SKU Catalog
+              Product Catalog
             </h2>
             <p className="text-muted" style={{ fontSize: '0.85rem' }}>Select products to add to current checkout invoice.</p>
           </div>
@@ -334,7 +334,7 @@ export default function Billing() {
 
         <div className="grid grid-cols-2 gap-4" style={{ padding: '0.5rem 0' }}>
           {filteredProducts.map(p => {
-            const isOutOfStock = p.current_stock <= 0;
+            const isOutOfStock = p.total_stock <= 0;
             return (
               <div 
                 key={p.id} 
@@ -355,9 +355,9 @@ export default function Billing() {
                   </span>
                 </div>
                 <div className="flex justify-between items-center" style={{ marginTop: '1rem' }}>
-                  <span className="font-bold" style={{ color: 'var(--accent-primary)', fontSize: '1.1rem' }}>₹{p.selling_price}/{p.uom}</span>
-                  <span className={`badge ${p.current_stock <= 10 ? 'badge-danger' : 'badge-success'}`}>
-                    Stock: {p.current_stock}
+                  <span className="font-bold" style={{ color: 'var(--accent-primary)', fontSize: '1.1rem' }}>₹{p.retail_price}</span>
+                  <span className={`badge ${p.total_stock <= 10 ? 'badge-danger' : 'badge-success'}`}>
+                    Stock: {p.total_stock} pcs
                   </span>
                 </div>
               </div>
@@ -385,22 +385,22 @@ export default function Billing() {
             <UserCheck size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--accent-primary)' }} />
           </div>
           <input 
-            placeholder="Client Legal Name" 
+            placeholder="Client / Dealer Name" 
             value={customerName}
             onChange={(e) => setCustomerName(e.target.value)}
             style={{ fontSize: '0.9rem' }}
           />
           <div className="grid grid-cols-2 gap-2">
             <select value={customerGroupTag} onChange={e => setCustomerGroupTag(e.target.value)} style={{ fontSize: '0.85rem' }}>
-              <option value="General">General Group</option>
-              <option value="Hindu">Hindu Audience</option>
-              <option value="Muslim">Muslim Audience</option>
+              <option value="General">Retail Customer</option>
+              <option value="Dealer">B2B Dealer</option>
+              <option value="Wholesale">Wholesaler</option>
             </select>
             <input 
               type="date" 
               value={customerDob} 
               onChange={e => setCustomerDob(e.target.value)} 
-              title="Date of Birth"
+              title="Date of Birth / Registration"
               style={{ fontSize: '0.85rem', padding: '0.4rem 0.5rem' }}
             />
           </div>
@@ -416,8 +416,8 @@ export default function Billing() {
               </div>
               <div className="flex gap-3 items-center" style={{ marginTop: '0.75rem' }}>
                 <div style={{ flex: 1 }}>
-                  <label className="text-muted" style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.25rem', display: 'block' }}>Qty ({item.uom})</label>
-                  <input type="number" step="0.01" min="0.01" max={item.current_stock} value={item.quantity} onChange={(e) => updateCartItem(i, 'quantity', e.target.value)} style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }} />
+                  <label className="text-muted" style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.25rem', display: 'block' }}>Qty (pcs)</label>
+                  <input type="number" step="1" min="1" max={item.current_stock} value={item.quantity} onChange={(e) => updateCartItem(i, 'quantity', e.target.value)} style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }} />
                 </div>
                 <div style={{ flex: 1 }}>
                   <label className="text-muted" style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.25rem', display: 'block' }}>Disc (₹)</label>
@@ -432,14 +432,14 @@ export default function Billing() {
           {cart.length === 0 && (
             <div className="flex-col items-center justify-center text-center text-muted" style={{ padding: '3rem 1rem' }}>
               <ShoppingCart size={32} style={{ marginBottom: '0.5rem', color: 'var(--border-color)' }} />
-              <p style={{ fontSize: '0.9rem' }}>Invoice cart is empty.</p>
+              <p style={{ fontSize: '0.9rem' }}>Checkout cart is empty.</p>
             </div>
           )}
         </div>
 
         {/* Real-time Business Intelligence Margin Indicator */}
         {cart.length > 0 && (
-          <div className="card flex items-center justify-between" style={{ padding: '0.75rem 1rem', background: 'rgba(197, 160, 89, 0.04)', borderColor: 'rgba(197, 160, 89, 0.2)', marginBottom: '1rem', borderRadius: '0.5rem' }}>
+          <div className="card flex items-center justify-between" style={{ padding: '0.75rem 1rem', background: 'rgba(224, 90, 16, 0.04)', borderColor: 'rgba(224, 90, 16, 0.2)', marginBottom: '1rem', borderRadius: '0.5rem' }}>
             <div className="flex items-center gap-2" style={{ color: 'var(--accent-primary)', fontSize: '0.85rem', fontWeight: 600 }}>
               <TrendingUp size={16} />
               <span>Real-time Margin Check:</span>

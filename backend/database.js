@@ -57,18 +57,18 @@ const db = new sqlite3.Database(dbPath, (err) => {
                 FOREIGN KEY (supplier_id) REFERENCES suppliers (id)
             )`);
 
-            // Products
+            // Products (Stove Inventory)
             db.run(`CREATE TABLE IF NOT EXISTS products (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                sku_takano TEXT UNIQUE,
-                article_name TEXT,
-                shade_id TEXT, -- max 7 chars enforced in app logic
-                total_meters REAL,
-                purchase_rate REAL,
-                gst_percentage REAL,
-                landing_cost REAL,
-                selling_price REAL,
-                shade_image TEXT, -- Base64
+                sku TEXT UNIQUE,
+                name TEXT NOT NULL,
+                category TEXT,
+                subcategory TEXT,
+                total_stock INTEGER DEFAULT 0,
+                manufacturing_cost REAL DEFAULT 0,
+                retail_price REAL DEFAULT 0,
+                wholesale_price REAL DEFAULT 0,
+                image TEXT, -- Base64 product image
                 supplier_id INTEGER,
                 invoice_no TEXT,
                 FOREIGN KEY (supplier_id) REFERENCES suppliers (id)
@@ -79,18 +79,33 @@ const db = new sqlite3.Database(dbPath, (err) => {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 phone TEXT UNIQUE,
-                faith_tag TEXT, -- 'General', 'Hindu', 'Muslim'
+                email TEXT,
                 dob TEXT, -- YYYY-MM-DD
-                master_measurements_json TEXT DEFAULT '{}'
+                notes TEXT DEFAULT '',
+                created_at TEXT
             )`);
+
+            // Factory Units (Replaced Managers/Workshops)
+            db.run(`CREATE TABLE IF NOT EXISTS factory_units (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                unit_number TEXT,
+                mobile_number TEXT,
+                is_active INTEGER DEFAULT 1,
+                stitching_rates TEXT DEFAULT '{}'
+            )`);
+            
+            db.run("ALTER TABLE factory_units ADD COLUMN stitching_rates TEXT DEFAULT '{}'", (err) => {
+                // Ignore error if column already exists
+            });
 
             // Orders
             db.run(`CREATE TABLE IF NOT EXISTS orders (
                 id TEXT PRIMARY KEY,
                 customer_id INTEGER,
-                manager_id INTEGER,
-                items_json TEXT,
-                measurements_json TEXT,
+                factory_unit_id INTEGER,
+                items_json TEXT, -- [{productId, name, qty, price, type}]
+                custom_specs_json TEXT, -- {dimensions, burnerType, bodyMaterial, regulatorType, instructions}
                 sub_total REAL,
                 discount_amount REAL,
                 grand_total REAL,
@@ -98,36 +113,38 @@ const db = new sqlite3.Database(dbPath, (err) => {
                 balance_due REAL,
                 cost_basis_total REAL,
                 net_profit REAL,
-                status TEXT, -- 'Booked', 'In Workshop', 'Ready for Trial', 'Delivered'
-                gst_applied BOOLEAN,
+                status TEXT, -- 'Booked', 'In Factory', 'Ready for Trial', 'Delivered'
+                sale_type TEXT, -- 'Retail' or 'Wholesale'
+                order_type TEXT, -- 'Direct' or 'Custom'
                 booked_date TEXT,
-                handover_target_date TEXT,
+                delivery_target_date TEXT,
                 delivery_date TEXT,
                 payment_history_json TEXT DEFAULT '[]',
+                factory_notes TEXT,
+                factory_done INTEGER DEFAULT 0,
                 FOREIGN KEY (customer_id) REFERENCES customers (id),
-                FOREIGN KEY (manager_id) REFERENCES managers (id)
+                FOREIGN KEY (factory_unit_id) REFERENCES factory_units (id)
             )`);
 
-            // Managers
-            db.run(`CREATE TABLE IF NOT EXISTS managers (
+            // Bad Debts Cleared (Post-Delivery Roundoff)
+            db.run(`CREATE TABLE IF NOT EXISTS bad_debts_cleared (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                workshop_number TEXT,
-                mobile_number TEXT,
-                stitching_rates TEXT DEFAULT '{}'
+                customer_id INTEGER,
+                amount REAL,
+                cleared_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`);
 
-            // Manager Ledger
-            db.run(`CREATE TABLE IF NOT EXISTS manager_ledger (
+            // Factory Ledger (Replaced Manager Ledger)
+            db.run(`CREATE TABLE IF NOT EXISTS factory_ledger (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                manager_id INTEGER,
+                factory_unit_id INTEGER,
                 order_id TEXT,
-                transaction_type TEXT, -- 'Cr_Stitching' or 'Dr_Advance'
+                transaction_type TEXT, -- 'Cr_Manufacturing' or 'Dr_Advance'
                 amount REAL,
                 payment_mode TEXT,
                 reference_no TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (manager_id) REFERENCES managers (id)
+                FOREIGN KEY (factory_unit_id) REFERENCES factory_units (id)
             )`);
 
             // Settings
@@ -136,16 +153,66 @@ const db = new sqlite3.Database(dbPath, (err) => {
                 value TEXT
             )`);
 
-            // Initial Settings seed
-            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('stitching_rates', '{"Pant": 500, "Shirt": 400, "Kurta": 450, "Pajama": 300, "Sherwani": 5000, "Coat": 2500, "Nehru Jacket": 1500, "V-Jacket": 1200, "Indowestern": 4000, "Achkan": 4500}')`);
+            // Initial Settings seed for Chachaji Udyog
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('whatsapp_number', '7300070513')`);
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('categories', '["Single Stove Burner - SS", "Single Stove Burner - Iron (MS)", "Double Stove Burner", "Three Stove Burner", "Four Stove Burner", "Commercial Burner", "Regulator", "Spare Parts"]')`);
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('owner_name', 'Chachaji Udyog')`);
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('owner_phone', '7300070513')`);
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('owner_address', 'Industrial Area Phase II, Jaipur, Rajasthan, 302012')`);
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('social_facebook', 'https://facebook.com')`);
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('social_instagram', 'https://instagram.com')`);
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('social_youtube', 'https://youtube.com')`);
+            db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('social_linkedin', 'https://linkedin.com')`);
+
+            // Auto-migrate categories and product references if old format exists
+            db.get("SELECT value FROM settings WHERE key = 'categories'", [], (err, row) => {
+                if (!err && row) {
+                    try {
+                        const cats = JSON.parse(row.value);
+                        if (cats.includes("Single Stove Burner") && !cats.includes("Single Stove Burner - SS")) {
+                            const newCats = [
+                                "Single Stove Burner - SS",
+                                "Single Stove Burner - Iron (MS)",
+                                ...cats.filter(c => c !== "Single Stove Burner")
+                            ];
+                            db.run("UPDATE settings SET value = ? WHERE key = 'categories'", [JSON.stringify(newCats)]);
+                            db.run("UPDATE products SET category = 'Single Stove Burner - SS' WHERE category = 'Single Stove Burner'");
+                            console.log("[Migration] Categories and products updated to include Single Stove Burner varieties.");
+                        }
+                    } catch (e) {
+                        console.error("[Migration Error] Failed to parse categories settings:", e);
+                    }
+                }
+            });
+            
+            // Articles / Posts
+            db.run(`CREATE TABLE IF NOT EXISTS articles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                image TEXT, -- Base64 article image
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`);
             
             // Daybook & Expenses
             db.run(`CREATE TABLE IF NOT EXISTS daybook_expenses (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                type TEXT, -- 'Income_POS', 'Income_Manual', 'Expense_Supplier', 'Expense_Shop'
+                type TEXT, -- 'Income_POS', 'Income_Manual', 'Expense_Supplier', 'Expense_Factory', 'Expense_Shop'
                 category TEXT,
                 amount REAL,
                 description TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`);
+
+            // Leads / Inquiries from public website
+            db.run(`CREATE TABLE IF NOT EXISTS leads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                email TEXT,
+                type TEXT, -- 'Custom Manufacturing', 'Commercial Fitting', 'Product Purchase', 'General Enquiry'
+                message TEXT,
+                status TEXT DEFAULT 'Pending', -- 'Pending', 'Contacted', 'Completed'
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`);
         });

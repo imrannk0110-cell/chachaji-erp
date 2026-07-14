@@ -1,24 +1,65 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap');
 
 :root {
-  /* Premium FinTech Dark Theme */
-  --bg-color: #0d0f12;          /* Very dark charcoal/black */
-  --surface-color: #161b22;     /* Slightly lighter for cards */
-  --surface-light: #21262d;     /* Inputs and hover states */
-  --surface-lighter: #30363d;   /* Borders and dividers */
+  /* Reference Image Style - Premium Professional Light Theme */
+  --bg-color: #f4f6f9;          /* Light grey/blue background */
+  --surface-color: #ffffff;     /* White cards & panels */
+  --surface-light: #f8fafc;     /* Light inputs and hover states */
+  --surface-lighter: #e2e8f0;   /* Borders and dividers */
   
-  --accent-gold: #C5A059;       /* Brushed Gold */
-  --accent-gold-hover: #DBC384;
-  --accent-gold-dim: rgba(197, 160, 89, 0.15);
+  --accent-gold: #0284c7;       /* Professional Blue (Primary buttons in image) */
+  --accent-gold-hover: #0369a1;
+  --accent-gold-dim: rgba(2, 132, 199, 0.1);
+  --accent-orange: #f97316;     /* Orange/Gold for active border indicators */
   
-  --text-primary: #f0f6fc;      /* Crisp off-white */
-  --text-secondary: #8b949e;    /* Muted gray for labels/subtext */
+  --text-primary: #1e293b;      /* Dark slate text */
+  --text-secondary: #64748b;    /* Muted gray for subtext */
   
-  --border-color: #30363d;      /* Subtle borders */
-  --border-focus: #C5A059;
+  --border-color: #e2e8f0;      /* Subtle border */
+  --border-focus: #0284c7;
   
-  --danger: #f85149;
-  --success: #2ea043;
+  --danger: #ef4444;
+  --success: #10b981;
+  --accent-text: #ffffff;       /* White text on professional blue */
+
+  /* Always Dark Sidebar Variables */
+  --sidebar-bg: #1e2530;        /* Dark navy blue sidebar background */
+  --sidebar-border: #2e3846;    /* Sidebar divider */
+  --sidebar-text: #9fa8bc;      /* Muted sidebar text */
+  --sidebar-text-active: #ffffff; /* Active item text */
+  --sidebar-item-active: #2b3553; /* Active item background */
+  --sidebar-indicator: #f97316;   /* Active vertical bar (orange/gold) */
+}
+
+[data-theme="dark"] {
+  /* Clean Dark Theme */
+  --bg-color: #0f172a;          /* Dark slate background */
+  --surface-color: #1e293b;     /* Slate card background */
+  --surface-light: #334155;     /* Dark inputs and hover states */
+  --surface-lighter: #475569;   /* Dark borders and dividers */
+  
+  --accent-gold: #38bdf8;       /* Bright blue accent */
+  --accent-gold-hover: #7dd3fc;
+  --accent-gold-dim: rgba(56, 189, 248, 0.15);
+  --accent-orange: #f97316;
+  
+  --text-primary: #f8fafc;      /* Crisp white text */
+  --text-secondary: #94a3b8;    /* Muted grey */
+  
+  --border-color: #334155;      /* Subtle dark border */
+  --border-focus: #38bdf8;
+  
+  --danger: #ef4444;
+  --success: #10b981;
+  --accent-text: #0f172a;       /* Dark slate text on bright sky blue */
+
+  /* Sidebar stays dark slate in dark mode too */
+  --sidebar-bg: #0f172a;
+  --sidebar-border: #1e293b;
+  --sidebar-text: #94a3b8;
+  --sidebar-text-active: #ffffff;
+  --sidebar-item-active: #1e293b;
+  --sidebar-indicator: #38bdf8;
 }
 
 * {
@@ -98,21 +139,37 @@ input:focus, select:focus, textarea:focus {
   background-color: var(--surface-light);
 }
 
-/* Utilities */
+/* Styling option elements safely */
+option {
+  background-color: var(--surface-color);
+  color: var(--text-primary);
+}
+
+[data-theme="light"] option {
+  background-color: #ffffff;
+  color: #1e293b;
+}
+
+[data-theme="dark"] option {
+  background-color: #1e293b;
+  color: #f8fafc;
+}
+
 .btn-primary {
-  background: linear-gradient(180deg, var(--accent-gold) 0%, #a88344 100%);
-  color: #000000;
-  border: 1px solid rgba(255,255,255,0.1);
+  background: var(--accent-gold);
+  color: var(--accent-text);
+  border: 1px solid rgba(0,0,0,0.1);
   padding: 0.6rem 1.25rem;
   border-radius: 6px;
   font-weight: 600;
   font-size: 0.875rem;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 4px rgba(2, 132, 199, 0.2);
 }
 
 .btn-primary:hover {
-  filter: brightness(1.1);
+  background: var(--accent-gold-hover);
+  color: var(--accent-text);
   transform: translateY(-1px);
 }
 
@@ -163,6 +220,7 @@ input:focus, select:focus, textarea:focus {
 .justify-between { justify-content: space-between; }
 .justify-center { justify-content: center; }
 .justify-end { justify-content: flex-end; }
+.flex-wrap { flex-wrap: wrap; }
 
 /* Spacing System */
 .gap-2 { gap: 0.5rem; }
@@ -381,3 +439,28 @@ tr:last-child td {
     display: none !important;
   }
 }
+
+@media (max-width: 768px) {
+  .modal-fullscreen-mobile {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    border-radius: 0 !important;
+    border: none !important;
+    padding: 0 !important;
+  }
+  
+  .footer-safe-area {
+    padding-bottom: 5rem !important;
+  }
+}
+
+/* Missing Tailwind Utilities */
+.relative { position: relative; }
+.absolute { position: absolute; }
+.overflow-hidden { overflow: hidden; }
+.overflow-x-auto { overflow-x: auto; }
+.overflow-y-auto { overflow-y: auto; }
+.w-full { width: 100%; }
+.h-full { height: 100%; }

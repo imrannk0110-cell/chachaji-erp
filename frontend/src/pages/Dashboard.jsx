@@ -4,6 +4,7 @@ import { Download, Users, Store, IndianRupee, Hammer, Search, Calendar, Calendar
 
 import { festivalsData } from '../utils/festivals';
 import { useLocation, useNavigate } from 'react-router-dom';
+import * as XLSX from 'xlsx-js-style';
 
 const Dashboard = () => {
   const [stats, setStats] = useState({
@@ -11,8 +12,7 @@ const Dashboard = () => {
     totalSuppliers: 0,
     activeOrders: 0,
     revenue: 0,
-    fabricMargin: 0,
-    stitchingMargin: 0,
+    netProfit: 0,
     netGalla: 0,
     todayOrdersCount: 0,
     todayOrdersRevenue: 0,
@@ -51,6 +51,9 @@ const Dashboard = () => {
 
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
+  const [showCompletedDeliveries, setShowCompletedDeliveries] = useState(false);
+  const [showCompletedHandovers, setShowCompletedHandovers] = useState(false);
+
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -85,16 +88,14 @@ const Dashboard = () => {
       
       setAllData({ orders: orders || [], customers: customers || [], products: products || [], daybook: daybook || [] });
 
-      let fabricMargin = 0;
-      let stitchingMargin = 0;
+      let netProfit = 0;
       let todayOrdersCount = 0;
       let todayOrdersRevenue = 0;
 
       const today = new Date().toISOString().split('T')[0];
 
       (orders || []).forEach(o => {
-          fabricMargin += (o.net_profit || 0) * 0.6; 
-          stitchingMargin += (o.net_profit || 0) * 0.4;
+          netProfit += o.net_profit || 0;
           if (o.booked_date && o.booked_date.startsWith(today)) {
               todayOrdersCount++;
               todayOrdersRevenue += o.grand_total || 0;
@@ -109,8 +110,7 @@ const Dashboard = () => {
         totalSuppliers: suppliers.length || 0,
         activeOrders: (orders || []).filter(o => o.status !== 'Delivered').length,
         revenue: (orders || []).reduce((acc, curr) => acc + (curr.grand_total || 0), 0),
-        fabricMargin,
-        stitchingMargin,
+        netProfit,
         netGalla: totalIncome - totalExpense,
         todayOrdersCount,
         todayOrdersRevenue,
@@ -134,50 +134,6 @@ const Dashboard = () => {
                   customerPhone: c.phone,
                   customerName: c.name
               });
-          }
-      });
-
-      // 2. Festivals
-      festivalsData.forEach(f => {
-          const fDate = new Date(f.date);
-          const diffDays = Math.ceil((fDate - todayDate) / (1000 * 60 * 60 * 24));
-          
-          if (diffDays >= 0 && diffDays <= 30) {
-              const count = (customers || []).filter(c => c.faith_tag === f.targetFaith).length;
-              if (count > 0) {
-                  // Special logic for Muslim festivals
-                  if (f.name === 'Eid-ul-Fitr' && diffDays === 30) {
-                      alerts.push({
-                          id: `fest-${f.name}-30`,
-                          type: 'festival-ramzan',
-                          title: `🌙 Ramzan starts today! (Send Wishes)`,
-                          count: count,
-                          targetFaith: f.targetFaith,
-                          festivalName: f.name
-                      });
-                  } else if ((f.name === 'Eid-ul-Fitr' || f.name === 'Eid-ul-Adha') && diffDays === 20) {
-                      alerts.push({
-                          id: `fest-${f.name}-20`,
-                          type: 'festival-rush',
-                          title: `🌙 ${f.name} in 20 days! (Order Prompt)`,
-                          count: count,
-                          targetFaith: f.targetFaith,
-                          festivalName: f.name
-                      });
-                  }
-
-                  // Normal festival logic (day of or 3 days before)
-                  if (diffDays >= 0 && diffDays <= 3) {
-                      alerts.push({
-                          id: `fest-${f.name}-${f.date}`,
-                          type: 'festival',
-                          title: `✨ ${f.name} is in ${diffDays} days!`,
-                          count: count,
-                          targetFaith: f.targetFaith,
-                          festivalName: f.name
-                      });
-                  }
-              }
           }
       });
 
@@ -207,13 +163,13 @@ const Dashboard = () => {
           finalAmount = parseFloat(deliveryPartialAmount) || 0;
           deliveryPayment = { amount: finalAmount, mode: 'Cash' };
           const remaining = deliverySelectedOrder.balance_due - finalAmount;
-          whatsappMessage = `Hello ${deliverySelectedOrder.customer_name},\n\nWe have received your partial payment of ₹${finalAmount}. Your remaining due balance is ₹${remaining}. Please clear it at your earliest convenience.\n\nThank you,\nHumjoli Safa`;
+          whatsappMessage = `Hello ${deliverySelectedOrder.customer_name},\n\nWe have received your partial payment of ₹${finalAmount}. Your remaining due balance is ₹${remaining}. Please clear it at your earliest convenience.\n\nThank you,\nChachaji Udyog`;
       } else if (deliverySettleType === 'No') {
           deliveryPayment = { amount: 0, mode: 'Cash' };
       }
       
       try {
-          const res = await fetch(`http://${window.location.hostname}:5000/api/orders/${deliverySelectedOrder.id}`, {
+          const res = await fetch(`/api/orders/${deliverySelectedOrder.id}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -233,6 +189,23 @@ const Dashboard = () => {
               if (whatsappMessage && deliverySelectedOrder.customer_phone) {
                   window.open(`https://wa.me/91${deliverySelectedOrder.customer_phone}?text=${encodeURIComponent(whatsappMessage)}`, '_blank');
               }
+          }
+      } catch (err) {
+          console.error(err);
+      }
+  };
+
+  const handleUndoDelivery = async (orderId) => {
+      if (!window.confirm("Are you sure you want to undo this delivery? The status will revert to 'Ready for Trial' and related payments will be removed.")) return;
+      try {
+          const res = await fetch(`/api/orders/${orderId}/undo-delivery`, {
+              method: 'PUT'
+          });
+          const data = await res.json();
+          if (data.success) {
+              setRefreshTrigger(prev => prev + 1);
+          } else {
+              alert(data.error || 'Failed to undo delivery');
           }
       } catch (err) {
           console.error(err);
@@ -263,11 +236,11 @@ const Dashboard = () => {
           newWorkshopDone = true;
       } else if (handoverType === 'No') {
           newTargetDate = handoverRescheduleDate;
-          whatsappMessage = `Hello ${handoverSelectedOrder.customer_name},\n\nWe apologize for the delay. Your order (${handoverSelectedOrder.id}) has been rescheduled. We will notify you once it is ready.\n\nThank you,\nHumjoli Safa`;
+          whatsappMessage = `Hello ${handoverSelectedOrder.customer_name},\n\nWe apologize for the delay. Your order (${handoverSelectedOrder.id}) has been rescheduled. We will notify you once it is ready.\n\nThank you,\nChachaji Udyog`;
       } else if (handoverType === 'Partially') {
           // New Split Order Logic
           try {
-              const res = await fetch(`http://${window.location.hostname}:5000/api/orders/${handoverSelectedOrder.id}/split`, {
+              const res = await fetch(`/api/orders/${handoverSelectedOrder.id}/split`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -279,7 +252,7 @@ const Dashboard = () => {
               });
               if (!res.ok) throw new Error('Failed to split order');
               
-              const whatsappMessage = `Hello ${handoverSelectedOrder.customer_name},\n\nPart of your order (${handoverSelectedOrder.id}) is ready! Specifically: ${handoverPartialText}. The remaining items (${handoverPendingText}) have been rescheduled for delivery on ${deliveryRescheduleDate}.\n\nThank you,\nHumjoli Safa`;
+              const whatsappMessage = `Hello ${handoverSelectedOrder.customer_name},\n\nPart of your order (${handoverSelectedOrder.id}) is ready! Specifically: ${handoverPartialText}. The remaining items (${handoverPendingText}) have been rescheduled for delivery on ${deliveryRescheduleDate}.\n\nThank you,\nChachaji Udyog`;
               const waLink = `https://wa.me/91${handoverSelectedOrder.customer_phone}?text=${encodeURIComponent(whatsappMessage)}`;
               window.open(waLink, '_blank');
               
@@ -293,7 +266,7 @@ const Dashboard = () => {
       }
 
       try {
-          const res = await fetch(`http://${window.location.hostname}:5000/api/orders/${handoverSelectedOrder.id}`, {
+          const res = await fetch(`/api/orders/${handoverSelectedOrder.id}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -318,21 +291,176 @@ const Dashboard = () => {
       }
   };
 
+  const handleUndoHandover = async (orderId) => {
+      if (!window.confirm("Are you sure you want to undo this handover? The order will revert to 'In Workshop'.")) return;
+      try {
+          const res = await fetch(`/api/orders/${orderId}/undo-handover`, {
+              method: 'PUT'
+          });
+          const data = await res.json();
+          if (data.success) {
+              setRefreshTrigger(prev => prev + 1);
+          } else {
+              alert(data.error || 'Failed to undo handover');
+          }
+      } catch (err) {
+          console.error(err);
+      }
+  };
+
   const handleExport = async () => {
     try {
-      const res = await fetch('/api/export/master');
+      const res = await fetch('/api/export/master/json');
       const data = await res.json();
       
+      const wb = XLSX.utils.book_new();
+      
+      // --- HELPER TO STYLE HEADERS ---
+      const addStyledSheet = (sheetName, sheetData, headerColor = "C5A059") => {
+          if (!sheetData || sheetData.length === 0) return;
+          const ws = XLSX.utils.json_to_sheet(sheetData);
+          
+          // Apply filters
+          if (ws['!ref']) ws['!autofilter'] = { ref: ws['!ref'] };
+          
+          // Auto-size columns
+          const colWidths = Object.keys(sheetData[0] || {}).map(k => ({ wch: Math.max(k.length + 5, 15) }));
+          ws['!cols'] = colWidths;
+
+          // Style headers
+          const range = XLSX.utils.decode_range(ws['!ref']);
+          for (let C = range.s.c; C <= range.e.c; ++C) {
+              const cellAddress = XLSX.utils.encode_cell({ r: 0, c: C });
+              if (!ws[cellAddress]) continue;
+              ws[cellAddress].s = {
+                  fill: { patternType: "solid", fgColor: { rgb: headerColor } },
+                  font: { bold: true, color: { rgb: "FFFFFF" } },
+                  alignment: { horizontal: "center", vertical: "center" }
+              };
+          }
+          
+          XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      };
+
+      // --- 1. KARIGHAR BALANCES (WORKSHOP SUMMARY) ---
+      if (data.managers && data.manager_ledger) {
+          const karigharSummary = data.managers.map(m => {
+              const ledger = data.manager_ledger.filter(l => l.manager_id === m.id);
+              const earned = ledger.filter(l => l.transaction_type === 'Cr_Stitching').reduce((sum, l) => sum + l.amount, 0);
+              const paid = ledger.filter(l => l.transaction_type === 'Dr_Advance').reduce((sum, l) => sum + l.amount, 0);
+              return {
+                  "ID": m.id,
+                  "Floor Worker/Unit": m.name,
+                  "Unit No.": m.workshop_number,
+                  "Mobile": m.mobile_number,
+                  "Total Earned (₹)": earned,
+                  "Total Paid/Advance (₹)": paid,
+                  "Net Balance Due (₹)": earned - paid,
+                  "Status": m.is_active ? "Active" : "Inactive"
+              };
+          });
+          addStyledSheet("Factory_Unit_Balances", karigharSummary, "D4AF37");
+      }
+
+      // --- 2. DAYBOOK TRANSACTIONS (CLEAN VIEW) ---
+      if (data.daybook_expenses) {
+          const daybookSummary = data.daybook_expenses.map(d => ({
+              "Date": new Date(d.created_at).toLocaleDateString(),
+              "Time": new Date(d.created_at).toLocaleTimeString(),
+              "Type": d.type.replace('_', ' '),
+              "Category": d.category,
+              "Amount (₹)": d.amount,
+              "Description": d.description || '-'
+          }));
+          addStyledSheet("Daybook_Transactions", daybookSummary, "10B981");
+      }
+
+      // --- 3. UNPAID ORDERS (UDHAARI DETAIL) ---
+      if (data.orders && data.customers) {
+          const unpaidOrders = data.orders.filter(o => o.balance_due > 0).map(o => {
+              const cust = data.customers.find(c => c.id === o.customer_id) || {};
+              // Format items_json into readable string
+              let itemsStr = "";
+              try {
+                  const items = JSON.parse(o.items_json || "[]");
+                  itemsStr = items.map(i => `${i.type} (${i.fabricMeters}m)`).join(", ");
+              } catch(e) {}
+              
+              return {
+                  "Order ID": o.id,
+                  "Customer Name": cust.name || 'Unknown',
+                  "Mobile": cust.phone || '-',
+                  "Items Details": itemsStr,
+                  "Grand Total (₹)": o.grand_total,
+                  "Advance Paid (₹)": o.advance_paid,
+                  "Balance Due (₹)": o.balance_due,
+                  "Current Status": o.status,
+                  "Order Date": new Date(o.created_at).toLocaleDateString()
+              };
+          });
+          if (unpaidOrders.length > 0) addStyledSheet("Unpaid_Orders_Udhaari", unpaidOrders, "EF4444"); // Red
+      }
+
+      // --- 4. ONGOING WORKSHOP ORDERS ---
+      if (data.orders && data.managers && data.customers) {
+          const activeOrders = data.orders.filter(o => o.status !== 'Delivered' && o.status !== 'Cancelled').map(o => {
+              const cust = data.customers.find(c => c.id === o.customer_id) || {};
+              const mgr = data.managers.find(m => m.id == o.manager_id) || {};
+              // Format items
+              let itemsStr = "";
+              try {
+                  const items = JSON.parse(o.items_json || "[]");
+                  itemsStr = items.map(i => i.type).join(", ");
+              } catch(e) {}
+              
+              return {
+                  "Order ID": o.id,
+                  "Customer Name": cust.name || 'Unknown',
+                  "Factory Floor Assigned": mgr.name ? `${mgr.name} (Unit ${mgr.workshop_number})` : 'Unassigned',
+                  "Stoves / Items": itemsStr,
+                  "Status": o.status,
+                  "Trial Date": o.trial_date ? new Date(o.trial_date).toLocaleDateString() : '-',
+                  "Delivery Date": o.delivery_date ? new Date(o.delivery_date).toLocaleDateString() : '-'
+              };
+          });
+          if (activeOrders.length > 0) addStyledSheet("Ongoing_Factory_Orders", activeOrders, "3B82F6"); // Blue
+      }
+      
+      // --- 5. SUPPLIER BALANCES ---
+      if (data.suppliers && data.supplier_ledger) {
+          const supplierSummary = data.suppliers.map(s => {
+              const ledger = data.supplier_ledger.filter(l => l.supplier_id === s.id);
+              const totalCredit = ledger.filter(l => l.transaction_type === 'Cr_Purchase').reduce((sum, l) => sum + l.amount, 0);
+              const totalPaid = ledger.filter(l => l.transaction_type === 'Dr_Payment').reduce((sum, l) => sum + l.amount, 0);
+              const balance = s.opening_balance + totalCredit - totalPaid;
+              return {
+                  "Supplier ID": s.id,
+                  "Supplier Name": s.name,
+                  "Mobile": s.mobile,
+                  "Total Purchase (₹)": totalCredit,
+                  "Total Paid (₹)": totalPaid,
+                  "Opening Balance (₹)": s.opening_balance,
+                  "Outstanding Due (₹)": balance
+              };
+          });
+          addStyledSheet("Supplier_Balances", supplierSummary, "8B5CF6"); // Purple
+      }
+
+      // --- 6. RAW TABLES DUMP ---
       Object.keys(data).forEach((table) => {
-        if (!data[table]) return;
-        const blob = new Blob([data[table]], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `HumjoliEthnic_${table}_${new Date().toISOString().split('T')[0]}.csv`;
-        a.click();
-        window.URL.revokeObjectURL(url);
+        if (!data[table] || data[table].length === 0) return;
+        const sheetData = data[table].map(row => {
+          let newRow = {};
+          for (let key in row) {
+            newRow[key] = (typeof row[key] === 'object' && row[key] !== null) ? JSON.stringify(row[key]) : row[key];
+          }
+          return newRow;
+        });
+        // Use a generic dark header for raw tables
+        addStyledSheet(`Raw_${table}`, sheetData, "475569");
       });
+      
+      XLSX.writeFile(wb, `ChachajiUdyog_MasterData_${new Date().toISOString().split('T')[0]}.xlsx`);
       alert('Master Data Exported Successfully!');
     } catch (err) {
       console.error(err);
@@ -359,45 +487,24 @@ const Dashboard = () => {
       } else if (activeFilter === 'Birthdays') {
           const todayMMDD = new Date().toISOString().slice(5, 10); // MM-DD
           results = allData.customers.filter(c => c.dob?.slice(5, 10) === todayMMDD);
-      } else if (activeFilter === 'Today Festival') {
-          const todayISO = new Date().toISOString().split('T')[0];
-          const todaysFestivals = festivalsData.filter(f => f.date === todayISO);
-          if (todaysFestivals.length > 0) {
-              const targetFaiths = todaysFestivals.map(f => f.targetFaith);
-              results = allData.customers.filter(c => targetFaiths.includes(c.faith_tag));
-          }
-      } else if (activeFilter === 'Upcoming Festival') {
-          const todayDate = new Date();
-          let targetFaiths = [];
-          festivalsData.forEach(f => {
-              const fDate = new Date(f.date);
-              const diffDays = Math.ceil((fDate - todayDate) / (1000 * 60 * 60 * 24));
-              if (diffDays > 0 && diffDays <= 15) { // Upcoming in next 15 days
-                  targetFaiths.push(f.targetFaith);
-              }
-          });
-          if (targetFaiths.length > 0) {
-              results = allData.customers.filter(c => targetFaiths.includes(c.faith_tag));
-          }
       } else if (searchQuery) {
-          // Check for Faith Tag first
-          const exactFaithMatch = allData.customers.filter(c => c.faith_tag?.toLowerCase() === query);
-          if (exactFaithMatch.length > 0) {
-              results = exactFaithMatch;
-          } else {
-              // Fuzzy match Orders, Phones, SKUs
-              const matchedOrders = allData.orders.filter(o => 
-                  o.id.toLowerCase().includes(query) || 
-                  (o.customer_phone && o.customer_phone.includes(query))
-              );
-              
-              const matchedProducts = allData.products.filter(p => 
-                  (p.sku_takano && p.sku_takano.toLowerCase().includes(query)) ||
-                  (p.invoice_no && p.invoice_no.toLowerCase().includes(query))
-              );
+          // Fuzzy match Orders, Customers, Products
+          const matchedCustomers = allData.customers.filter(c => 
+              c.name.toLowerCase().includes(query) || 
+              (c.phone && c.phone.includes(query))
+          );
+          
+          const matchedOrders = allData.orders.filter(o => 
+              o.id.toLowerCase().includes(query) || 
+              (o.customer_phone && o.customer_phone.includes(query))
+          );
+          
+          const matchedProducts = allData.products.filter(p => 
+              (p.sku && p.sku.toLowerCase().includes(query)) ||
+              (p.name && p.name.toLowerCase().includes(query))
+          );
 
-              results = [...matchedOrders, ...matchedProducts];
-          }
+          results = [...matchedCustomers, ...matchedOrders, ...matchedProducts];
       }
 
       setSearchResults(results);
@@ -408,32 +515,37 @@ const Dashboard = () => {
       let text = '';
       if (festivalContext) {
           if (festivalContext.type === 'festival-ramzan') {
-              text = `Ramzan Mubarak ${name}! May this holy month bring you peace and prosperity.\n\nWarm Wishes,\nHumjoli Ethnic`;
+              text = `Ramzan Mubarak ${name}! May this holy month bring you peace and prosperity.\n\nWarm Wishes,\nChachaji Udyog`;
           } else if (festivalContext.type === 'festival-rush') {
-              text = `Hello ${name},\n\n${festivalContext.festivalName} is just 20 days away! To ensure timely delivery amidst the festival rush, please place your tailoring orders as soon as possible.\n\nThank you,\nHumjoli Ethnic`;
+              text = `Hello ${name},\n\n${festivalContext.festivalName} is just 20 days away! To ensure timely delivery, please place your gas stove orders as soon as possible.\n\nThank you,\nChachaji Udyog`;
           } else if (festivalContext.type === 'festival') {
-              text = `Happy ${festivalContext.festivalName} ${name}! Wishing you joy and happiness.\n\nWarm Wishes,\nHumjoli Ethnic`;
+              text = `Happy ${festivalContext.festivalName} ${name}! Wishing you joy and happiness.\n\nWarm Wishes,\nChachaji Udyog`;
           }
       } else if (activeFilter === 'Birthdays') {
-          text = `Happy Birthday ${name}!! 🎂🎉\nHumjoli Ethnic wishes you a fantastic day! Enjoy a special 15% discount on your next tailoring order valid for 7 days.`;
+          text = `Happy Birthday ${name}!! 🎂🎉\nChachaji Udyog wishes you a fantastic day! Enjoy a special discount on your next order valid for 7 days.`;
       } else {
-          text = `Hello ${name},\n\nGreetings from Humjoli Ethnic!`;
+          text = `Hello ${name},\n\nGreetings from Chachaji Udyog!`;
       }
       const url = `https://wa.me/91${phone}?text=${encodeURIComponent(text)}`;
       window.open(url, '_blank');
   };
 
   return (
-    <div>
-      <div className="flex justify-between items-end mb-4">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <div className="flex justify-between items-center">
         <div>
-          <h1 className="m-0" style={{ fontSize: '1.8rem', marginBottom: '4px' }}>Dashboard Overview</h1>
-          <p className="subtext m-0">Welcome to Humjoli Ethnic Management Panel</p>
+          <p className="subtext m-0" style={{ fontSize: '0.95rem', fontWeight: '500' }}>Welcome to Chachaji Udyog Management Panel</p>
         </div>
-        <button className="btn-primary btn-icon" onClick={handleExport}>
-          <Download size={18} />
-          Export Master Data (CSV)
-        </button>
+        <div className="flex gap-3">
+          <button className="btn-secondary btn-icon" onClick={() => window.open('/api/export/database', '_blank')} title="Download complete database backup for system restore" style={{ fontSize: '0.8rem', padding: '0.5rem 1rem' }}>
+            <Download size={14} />
+            System Backup (.db)
+          </button>
+          <button className="btn-primary btn-icon" onClick={handleExport} style={{ fontSize: '0.8rem', padding: '0.5rem 1rem' }}>
+            <Download size={14} />
+            Export Master Data (Excel)
+          </button>
+        </div>
       </div>
 
       {/* UNIVERSAL COMMAND SEARCH BAR */}
@@ -442,7 +554,7 @@ const Dashboard = () => {
             <Search size={20} color="var(--accent-gold)" style={{ position: 'absolute', left: '16px', top: '18px' }} />
             <input 
                type="text" 
-               placeholder="Universal Search: Order ID, Mobile Number, Takano SKU, Wholesaler Invoice..." 
+               placeholder="Universal Search: Order ID, Mobile Number, Stove SKU, Wholesaler Invoice..." 
                value={searchQuery}
                onChange={e => { setSearchQuery(e.target.value); setActiveFilter(''); setFestivalContext(null); }}
                className="w-full search-input"
@@ -459,20 +571,6 @@ const Dashboard = () => {
             >
                 <Cake size={14} /> Today's Birthday
             </button>
-            <button 
-                className={`btn-secondary text-sm py-1.5 px-3 flex items-center gap-2 ${activeFilter === 'Today Festival' ? 'bg-[var(--accent-gold)] text-black' : ''}`}
-                onClick={() => { setActiveFilter(prev => prev === 'Today Festival' ? '' : 'Today Festival'); setSearchQuery(''); }}
-                style={{ borderRadius: '20px', border: activeFilter === 'Today Festival' ? 'none' : '1px solid var(--border-color)' }}
-            >
-                <Star size={14} /> Today Festival
-            </button>
-            <button 
-                className={`btn-secondary text-sm py-1.5 px-3 flex items-center gap-2 ${activeFilter === 'Upcoming Festival' ? 'bg-[var(--accent-gold)] text-black' : ''}`}
-                onClick={() => { setActiveFilter(prev => prev === 'Upcoming Festival' ? '' : 'Upcoming Festival'); setSearchQuery(''); }}
-                style={{ borderRadius: '20px', border: activeFilter === 'Upcoming Festival' ? 'none' : '1px solid var(--border-color)' }}
-            >
-                <CalendarDays size={14} /> Upcoming Festival
-            </button>
          </div>
 
          {/* DYNAMIC SEARCH RESULTS LIST */}
@@ -484,12 +582,12 @@ const Dashboard = () => {
                ) : (
                    <div className="flex flex-col gap-2">
                        {searchResults.map((res, i) => {
-                           if (res.faith_tag && !String(res.id).startsWith('ORD')) {
-                               // It's a Customer (From Faith Search or Birthday)
+                           if (res.phone && !String(res.id).startsWith('ORD')) {
+                               // It's a Customer (From Search or Birthday)
                                return (
                                    <div key={`c-${res.id || res.phone}`} className="flex justify-between items-center p-3 bg-[var(--surface-light)] rounded-lg border border-[var(--border-color)]">
                                        <div>
-                                           <span className="font-bold text-white">{res.name}</span>
+                                           <span className="font-bold text-[var(--text-primary)]">{res.name}</span>
                                            <span className="text-sm subtext ml-3">{res.phone}</span>
                                        </div>
                                        <button className="btn-secondary text-sm flex gap-2" onClick={() => sendCustomerMessage(res.phone, res.name)}>
@@ -497,15 +595,15 @@ const Dashboard = () => {
                                        </button>
                                    </div>
                                );
-                           } else if (res.sku_takano) {
+                           } else if (res.sku || res.landing_cost !== undefined) {
                                // It's a Product
                                return (
                                    <div key={`p-${res.id}`} className="flex justify-between items-center p-3 bg-[var(--surface-light)] rounded-lg border border-[var(--border-color)]">
                                        <div>
-                                           <span className="font-bold text-[var(--accent-gold)]">{res.sku_takano}</span>
-                                           <span className="text-sm subtext ml-3">Invoice: {res.invoice_no} | {res.total_meters}m</span>
+                                           <span className="font-bold text-[var(--accent-gold)]">{res.sku || res.name}</span>
+                                           <span className="text-sm subtext ml-3">{res.category || 'Product'}</span>
                                        </div>
-                                       <span className="text-sm">Landing: ₹{res.landing_cost}</span>
+                                       <span className="text-sm text-[var(--text-primary)]">Landing: ₹{res.landing_cost}</span>
                                    </div>
                                );
                            } else {
@@ -513,7 +611,7 @@ const Dashboard = () => {
                                return (
                                    <div key={`o-${res.id}`} className="flex justify-between items-center p-3 bg-[var(--surface-light)] rounded-lg border border-[var(--border-color)]">
                                        <div>
-                                           <span className="font-bold text-white">{res.id}</span>
+                                           <span className="font-bold text-[var(--text-primary)]">{res.id}</span>
                                            <span className="text-sm subtext ml-3">{res.customer_name} ({res.customer_phone})</span>
                                        </div>
                                        <span className={`text-sm px-2 py-1 rounded bg-[var(--bg-color)] ${res.status === 'Delivered' ? 'text-[var(--success)]' : 'text-[var(--accent-gold)]'}`}>{res.status}</span>
@@ -527,40 +625,69 @@ const Dashboard = () => {
          )}
       </div>
 
-      {/* ROW 1: KPI COMMAND CENTER */}
-      <div className="grid grid-cols-4 gap-6 mt-6">
-        <div className="card flex flex-col justify-between cursor-pointer hover:scale-105 transition-transform" style={{ borderTop: '3px solid var(--accent-gold)', backgroundColor: 'rgba(255, 215, 0, 0.05)', padding: '1.25rem' }} onClick={() => navigate('/daybook')}>
-          <p className="form-label" style={{ marginBottom: 0 }}>Aaj ka Galla (Net Cash)</p>
-          <div className="flex items-end justify-between mt-2">
-             <h2 style={{ fontSize: '1.5rem', marginBottom: 0, color: 'var(--accent-gold)' }}>₹{stats.netGalla.toLocaleString()}</h2>
-             <Wallet size={20} color="var(--accent-gold)" />
+      {/* ROW 1: KPI COMMAND CENTER (Styled matching reference image) */}
+      <div className="grid grid-cols-4 gap-6">
+        <div className="card flex flex-col justify-between cursor-pointer hover:shadow-md transition-shadow" style={{ padding: '1.5rem', backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '12px' }} onClick={() => navigate('/dashboard/daybook')}>
+          <div>
+            <p style={{ margin: 0, fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-secondary)' }}>Aaj ka Galla (Net Cash)</p>
+            <h2 style={{ fontSize: '1.8rem', fontWeight: '700', margin: '0.5rem 0 0 0', color: 'var(--success)' }}>
+              ₹{stats.netGalla.toLocaleString()}
+            </h2>
+          </div>
+          <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '500' }}>Outward Sales & Expenses</span>
+            <Wallet size={16} color="var(--success)" />
           </div>
         </div>
 
-        <div className="card flex flex-col justify-between cursor-pointer hover:scale-105 transition-transform" style={{ borderTop: '3px solid var(--text-primary)', padding: '1.25rem' }} onClick={() => navigate('/all-orders', { state: { filter: "Today's Orders" } })}>
-          <p className="form-label" style={{ marginBottom: 0 }}>Today's Orders</p>
-          <div className="flex items-end justify-between mt-2">
-             <div>
-                <h2 style={{ fontSize: '1.5rem', marginBottom: 0 }}>{stats.todayOrdersCount}</h2>
-                <span className="subtext text-[10px]">Valued ₹{stats.todayOrdersRevenue.toLocaleString()}</span>
-             </div>
-             <ClipboardList size={20} color="var(--text-secondary)" />
+        <div className="card flex flex-col justify-between cursor-pointer hover:shadow-md transition-shadow" style={{ padding: '1.5rem', backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '12px' }} onClick={() => navigate('/dashboard/all-orders', { state: { filter: "Today's Orders" } })}>
+          <div>
+            <p style={{ margin: 0, fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-secondary)' }}>Today's Orders</p>
+            <h2 style={{ fontSize: '1.8rem', fontWeight: '700', margin: '0.5rem 0 0 0', color: 'var(--text-primary)' }}>
+              {stats.todayOrdersCount}
+            </h2>
+          </div>
+          <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '500' }}>Valued at ₹{stats.todayOrdersRevenue.toLocaleString()}</span>
+            <ClipboardList size={16} color="var(--text-secondary)" />
           </div>
         </div>
 
-        <div className="card flex flex-col justify-between cursor-pointer hover:scale-105 transition-transform" style={{ borderTop: '3px solid var(--success)', backgroundColor: 'rgba(37, 211, 102, 0.05)', padding: '1.25rem' }} onClick={() => navigate('/customers', { state: { filter: 'Udhaari' } })}>
-          <p className="form-label" style={{ marginBottom: 0 }}>Market Udhaari (Receivables)</p>
-          <div className="flex items-end justify-between mt-2">
-             <h2 style={{ fontSize: '1.5rem', color: 'var(--success)', marginBottom: 0 }}>₹{stats.totalReceivables.toLocaleString()}</h2>
-             <TrendingUp size={20} color="var(--success)" />
+        <div className="card flex flex-col justify-between cursor-pointer hover:shadow-md transition-shadow" style={{ padding: '1.5rem', backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '12px' }} onClick={() => navigate('/dashboard/customers', { state: { filter: 'Udhaari' } })}>
+          <div>
+            <p style={{ margin: 0, fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-secondary)' }}>
+              {stats.totalReceivables >= 0 ? 'Sundry Debtors' : 'Customer Advances'}
+            </p>
+            <h2 style={{ fontSize: '1.8rem', fontWeight: '700', margin: '0.5rem 0 0 0', color: stats.totalReceivables >= 0 ? 'var(--success)' : 'var(--accent-gold)' }}>
+              ₹{Math.abs(stats.totalReceivables).toLocaleString()}
+            </h2>
+          </div>
+          <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '500' }}>
+              {stats.totalReceivables >= 0 ? 'Total outstanding receivables' : 'Overpaid / Advance deposits'}
+            </span>
+            <TrendingUp size={16} color={stats.totalReceivables >= 0 ? 'var(--success)' : 'var(--accent-gold)'} />
           </div>
         </div>
 
-        <div className="card flex flex-col justify-between cursor-pointer hover:scale-105 transition-transform" style={{ borderTop: '3px solid var(--danger)', backgroundColor: 'rgba(244, 63, 94, 0.05)', padding: '1.25rem' }} onClick={() => navigate('/suppliers', { state: { filter: 'Dena' } })}>
-          <p className="form-label" style={{ marginBottom: 0 }}>Market Dena (Payables)</p>
-          <div className="flex items-end justify-between mt-2">
-             <h2 style={{ fontSize: '1.5rem', color: 'var(--danger)', marginBottom: 0 }}>₹{stats.totalPayables.toLocaleString()}</h2>
-             <TrendingDown size={20} color="var(--danger)" />
+        <div className="card flex flex-col justify-between cursor-pointer hover:shadow-md transition-shadow" style={{ padding: '1.5rem', backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '12px' }} onClick={() => navigate('/dashboard/suppliers', { state: { filter: 'Dena' } })}>
+          <div>
+            <p style={{ margin: 0, fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-secondary)' }}>
+              {stats.totalPayables >= 0 ? 'Sundry Creditors' : 'Supplier Advances'}
+            </p>
+            <h2 style={{ fontSize: '1.8rem', fontWeight: '700', margin: '0.5rem 0 0 0', color: stats.totalPayables >= 0 ? 'var(--danger)' : 'var(--success)' }}>
+              ₹{Math.abs(stats.totalPayables).toLocaleString()}
+            </h2>
+          </div>
+          <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '500' }}>
+              {stats.totalPayables >= 0 ? 'Total outstanding payables' : 'Advance paid to suppliers'}
+            </span>
+            {stats.totalPayables >= 0 ? (
+              <TrendingDown size={16} color="var(--danger)" />
+            ) : (
+              <TrendingUp size={16} color="var(--success)" />
+            )}
           </div>
         </div>
       </div>
@@ -568,141 +695,222 @@ const Dashboard = () => {
       {/* ROW 2: ACTIONABLE LISTS */}
       <div className="grid grid-cols-2 gap-6 mt-4">
           {/* LEFT HALF: Today Deliveries */}
-          <div className="card relative overflow-hidden" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', background: 'linear-gradient(145deg, rgba(176,132,204,0.15) 0%, rgba(20,15,25,0.9) 100%)', border: '1px solid rgba(176,132,204,0.3)', boxShadow: '0 8px 32px rgba(176,132,204,0.15)' }}>
-              <div style={{ position: 'absolute', top: '-50px', right: '-50px', width: '150px', height: '150px', background: 'radial-gradient(circle, rgba(176,132,204,0.2) 0%, transparent 70%)', borderRadius: '50%', filter: 'blur(20px)', pointerEvents: 'none' }}></div>
-              <h3 className="mb-4 flex items-center gap-2 m-0 relative z-10" style={{ fontSize: '1.2rem', fontWeight: '700', color: '#D0A5F0', textShadow: '0 2px 10px rgba(176,132,204,0.4)' }}><CheckSquare size={20} /> Today Deliveries</h3>
-              <div className="flex flex-col pr-1 z-10" style={{ maxHeight: '350px', overflowY: 'auto', flex: 1 }}>
+          <div className="card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '12px' }}>
+              <h3 className="mb-4 flex items-center gap-2 m-0 text-[var(--text-primary)]" style={{ fontSize: '1.15rem', fontWeight: '700' }}><CheckSquare size={18} color="var(--accent-gold)" /> Today Deliveries</h3>
+              <div className="flex flex-col pr-1" style={{ maxHeight: '350px', overflowY: 'auto', flex: 1 }}>
                   {(() => {
                       const today = new Date().toISOString().split('T')[0];
-                      const todayDeliveries = allData.orders.filter(o => {
+                      const pendingDeliveries = [];
+                      const completedDeliveries = [];
+                      
+                      allData.orders.forEach(o => {
                           const delDate = o.delivery_date?.split('T')[0];
-                          if (!delDate) return false;
-                          if (delDate === today) return true;
-                          if (delDate < today && o.status !== 'Delivered') return true;
-                          return false;
+                          if (!delDate) return;
+                          
+                          if (o.status === 'Delivered' && delDate === today) {
+                              completedDeliveries.push(o);
+                          } else if (o.status !== 'Delivered' && delDate <= today) {
+                              pendingDeliveries.push(o);
+                          }
                       });
 
-                      return todayDeliveries.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center h-full min-h-[200px] p-6 rounded-xl border" style={{ backgroundColor: 'rgba(176,132,204,0.05)', borderColor: 'rgba(176,132,204,0.2)' }}>
-                              <CheckSquare size={32} color="#B084CC" className="mb-2 opacity-50" />
-                              <p className="subtext m-0 text-sm">No pending deliveries for today.</p>
-                          </div>
-                      ) : (
-                          todayDeliveries.map(o => {
-                              const isOverdue = o.delivery_date?.split('T')[0] < today;
-                              return (
-                                  <div 
-                                      key={`del-${o.id}`} 
-                                      className="flex justify-between items-center p-3.5 mb-3 rounded-xl border transition-all shadow-sm group hover:-translate-y-1 hover:shadow-lg" 
-                                      style={{ backgroundColor: isOverdue ? 'rgba(244, 63, 94, 0.25)' : 'rgba(20,15,25,0.6)', borderColor: isOverdue ? 'rgba(244, 63, 94, 0.8)' : 'rgba(176,132,204,0.2)', boxShadow: isOverdue ? '0 0 15px rgba(244, 63, 94, 0.25)' : 'none', backdropFilter: 'blur(5px)' }} 
-                                      onMouseEnter={(e) => {if(!isOverdue) e.currentTarget.style.backgroundColor = 'rgba(176,132,204,0.1)'}} 
-                                      onMouseLeave={(e) => {if(!isOverdue) e.currentTarget.style.backgroundColor = 'rgba(20,15,25,0.6)'}}
-                                  >
-                                     <div className="flex items-start gap-4 w-full">
-                                         <button 
-                                            onClick={() => o.status !== 'Delivered' && handleDeliveryCheckboxClick(o)}
-                                            style={{ width: '24px', height: '24px', minWidth: '24px' }}
-                                            className={`mt-0.5 rounded flex items-center justify-center border-2 transition-all ${o.status === 'Delivered' ? 'bg-[#B084CC] border-[#B084CC] scale-105 shadow-[0_0_10px_rgba(176,132,204,0.5)]' : 'border-[#B084CC] hover:bg-[rgba(176,132,204,0.2)] hover:shadow-[0_0_8px_rgba(176,132,204,0.3)]'}`}
-                                         >
-                                            {o.status === 'Delivered' && <Check size={14} color="#fff" strokeWidth={3} />}
-                                         </button>
-                                         <div className="flex-1 flex flex-col gap-1.5">
-                                             <div className="flex justify-between items-center">
-                                                 <span className="font-bold text-white text-[15px] tracking-wide" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>{o.customer_name}</span>
-                                                 {isOverdue && <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[var(--danger)] bg-opacity-20 text-[var(--danger)] uppercase tracking-wider border border-[var(--danger)] border-opacity-30">Overdue</span>}
-                                             </div>
-                                             <div className="flex flex-wrap items-center gap-3 text-xs subtext font-medium">
-                                                 <span className="px-2 py-0.5 rounded text-[#D0A5F0] border border-[#B084CC] border-opacity-30" style={{ backgroundColor: 'rgba(176,132,204,0.05)' }}>{o.id}</span>
-                                                 <span className="flex items-center gap-1 text-[var(--danger)]"><IndianRupee size={12}/> Due: ₹{o.balance_due}</span>
-                                                 <span className="flex items-center gap-1 text-[#D0A5F0]"><Calendar size={12}/> {new Date(o.delivery_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
-                                             </div>
-                                         </div>
-                                         <button className="flex-shrink-0 self-center ml-2 p-2 rounded-lg transition-colors text-[#B084CC] border border-[rgba(176,132,204,0.3)] hover:border-[#D0A5F0] hover:bg-[#B084CC] hover:text-white group-hover:shadow-[0_0_10px_rgba(176,132,204,0.3)]" style={{ backgroundColor: 'rgba(176,132,204,0.05)' }} onClick={() => {
-                                             let f = 'All';
-                                             if (o.status === 'Ready for Trial' || o.status === 'Ready for trial') f = 'Ready for trial';
-                                             else if (o.status === 'In Workshop' || o.status === 'In workshop') f = 'In workshop';
-                                             navigate('/all-orders', { state: { filter: f, search: o.id } });
-                                         }} title="View Order">
-                                             <ArrowRight size={16} />
-                                         </button>
-                                     </div>
+                      return (
+                          <>
+                              {pendingDeliveries.length === 0 ? (
+                                  <div className="flex flex-col items-center justify-center h-full min-h-[150px] p-6 rounded-xl border border-[var(--border-color)]" style={{ backgroundColor: 'var(--surface-light)' }}>
+                                      <CheckSquare size={28} color="var(--text-secondary)" className="mb-2 opacity-50" />
+                                      <p className="subtext m-0 text-sm">No pending deliveries for today.</p>
                                   </div>
-                              );
-                          })
+                              ) : (
+                                  pendingDeliveries.map(o => {
+                                      const isOverdue = o.delivery_date?.split('T')[0] < today;
+                                      return (
+                                          <div 
+                                              key={`del-${o.id}`} 
+                                              className="flex justify-between items-center p-3.5 mb-3 rounded-xl border transition-all shadow-sm group hover:-translate-y-1 hover:shadow-md" 
+                                              style={{ backgroundColor: isOverdue ? 'rgba(239, 68, 68, 0.08)' : 'var(--surface-light)', borderColor: isOverdue ? 'rgba(239, 68, 68, 0.4)' : 'var(--border-color)' }}
+                                          >
+                                             <div className="flex items-start gap-4 w-full">
+                                                 <button 
+                                                    onClick={() => handleDeliveryCheckboxClick(o)}
+                                                    style={{ width: '22px', height: '22px', minWidth: '22px', border: '2px solid var(--accent-gold)' }}
+                                                    className="mt-0.5 rounded flex items-center justify-center bg-transparent hover:bg-var(--accent-gold-dim) transition-all"
+                                                 >
+                                                 </button>
+                                                 <div className="flex-1 flex flex-col gap-1.5">
+                                                     <div className="flex justify-between items-center">
+                                                         <span className="font-bold text-[var(--text-primary)] text-[14px] tracking-wide">{o.customer_name}</span>
+                                                         {isOverdue && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[var(--danger)] bg-opacity-10 text-[var(--danger)] uppercase tracking-wider border border-[var(--danger)] border-opacity-20">Overdue</span>}
+                                                     </div>
+                                                     <div className="flex flex-wrap items-center gap-3 text-xs subtext font-medium">
+                                                         <span className="px-2 py-0.5 rounded text-[var(--accent-gold)] border border-[var(--border-color)]" style={{ backgroundColor: 'var(--surface-color)' }}>{o.id}</span>
+                                                         <span className="flex items-center gap-1 text-[var(--danger)]"><IndianRupee size={12}/> Due: ₹{o.balance_due}</span>
+                                                         <span className="flex items-center gap-1 text-[var(--text-secondary)]"><Calendar size={12}/> {new Date(o.delivery_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                                                     </div>
+                                                 </div>
+                                                 <button className="flex-shrink-0 self-center ml-2 p-2 rounded-lg transition-colors text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--accent-gold)] hover:bg-[var(--accent-gold)] hover:text-white" onClick={() => {
+                                                     navigate('/all-orders', { state: { filter: 'All', search: o.id } });
+                                                 }} title="View Order">
+                                                     <ArrowRight size={14} />
+                                                 </button>
+                                             </div>
+                                          </div>
+                                      );
+                                  })
+                              )}
+
+                              {/* Completed Today Section */}
+                              {completedDeliveries.length > 0 && (
+                                  <div className="mt-4">
+                                      <button 
+                                          onClick={() => setShowCompletedDeliveries(!showCompletedDeliveries)}
+                                          className="flex items-center gap-2 text-sm text-[var(--accent-gold)] mb-3 w-full text-left focus:outline-none"
+                                      >
+                                          {showCompletedDeliveries ? '▼' : '▶'} Show Completed Today ({completedDeliveries.length})
+                                      </button>
+                                      
+                                      {showCompletedDeliveries && completedDeliveries.map(o => (
+                                          <div key={`del-comp-${o.id}`} className="flex justify-between items-center p-3.5 mb-3 rounded-xl border border-[var(--border-color)]" style={{ backgroundColor: 'var(--surface-light)' }}>
+                                             <div className="flex items-start gap-4 w-full opacity-60 hover:opacity-100 transition-opacity">
+                                                 <button 
+                                                    onClick={() => handleUndoDelivery(o.id)}
+                                                    style={{ width: '22px', height: '22px', minWidth: '22px', backgroundColor: 'var(--success)', border: 'none' }}
+                                                    className="mt-0.5 rounded flex items-center justify-center"
+                                                    title="Undo Delivery"
+                                                 >
+                                                    <Check size={12} color="#fff" strokeWidth={3} />
+                                                 </button>
+                                                 <div className="flex-1 flex flex-col gap-1.5" style={{ textDecoration: 'line-through' }}>
+                                                     <div className="flex justify-between items-center">
+                                                         <span className="font-bold text-[var(--text-primary)] text-[14px] tracking-wide">{o.customer_name}</span>
+                                                     </div>
+                                                     <div className="flex flex-wrap items-center gap-3 text-xs subtext font-medium">
+                                                         <span className="px-2 py-0.5 rounded text-[var(--text-secondary)] border border-[var(--border-color)]">{o.id}</span>
+                                                     </div>
+                                                 </div>
+                                             </div>
+                                          </div>
+                                      ))}
+                                  </div>
+                              )}
+                          </>
                       );
                   })()}
               </div>
           </div>
 
           {/* RIGHT HALF: Tomorrow Handover */}
-          <div className="card relative overflow-hidden" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', background: 'linear-gradient(145deg, rgba(205,133,63,0.15) 0%, rgba(25,18,15,0.9) 100%)', border: '1px solid rgba(205,133,63,0.3)', boxShadow: '0 8px 32px rgba(205,133,63,0.15)' }}>
-              <div style={{ position: 'absolute', top: '-50px', right: '-50px', width: '150px', height: '150px', background: 'radial-gradient(circle, rgba(205,133,63,0.2) 0%, transparent 70%)', borderRadius: '50%', filter: 'blur(20px)', pointerEvents: 'none' }}></div>
-              <h3 className="mb-4 flex items-center gap-2 m-0 relative z-10" style={{ fontSize: '1.2rem', fontWeight: '700', color: '#F0A550', textShadow: '0 2px 10px rgba(205,133,63,0.4)' }}><Hammer size={20} /> Tomorrow Handover</h3>
-              <div className="flex flex-col pr-1 z-10" style={{ maxHeight: '350px', overflowY: 'auto', flex: 1 }}>
+          <div className="card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '12px' }}>
+              <h3 className="mb-4 flex items-center gap-2 m-0 text-[var(--text-primary)]" style={{ fontSize: '1.15rem', fontWeight: '700' }}><Hammer size={18} color="var(--accent-gold)" /> Tomorrow Handover</h3>
+              <div className="flex flex-col pr-1" style={{ maxHeight: '350px', overflowY: 'auto', flex: 1 }}>
                   {(() => {
                       const today = new Date().toISOString().split('T')[0];
-                      const d = new Date(); d.setDate(d.getDate() + 1);
-                      const tmrw = d.toISOString().split('T')[0];
+                      const tmrwDate = new Date();
+                      tmrwDate.setDate(tmrwDate.getDate() + 1);
+                      const tmrw = tmrwDate.toISOString().split('T')[0];
                       
-                      const tomorrowHandovers = allData.orders.filter(o => {
+                      const pendingHandovers = [];
+                      const completedHandovers = [];
+                      
+                      allData.orders.forEach(o => {
                           const handDate = o.handover_target_date?.split('T')[0];
-                          if (!handDate) return false;
-                          if (handDate === tmrw) return true;
-                          if (handDate <= today && !o.workshop_done && (o.status === 'In Workshop' || o.status === 'Ready for Trial')) return true;
-                          return false;
+                          if (!handDate) return;
+                          
+                          if (o.workshop_handover_status === 'Completed') {
+                              if (handDate === today || handDate === tmrw) {
+                                  completedHandovers.push(o);
+                              }
+                          } else {
+                              if (handDate === tmrw || (handDate <= today && (o.status === 'In Workshop' || o.status === 'Ready for Trial'))) {
+                                  pendingHandovers.push(o);
+                              }
+                          }
                       });
 
-                      return tomorrowHandovers.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center h-full min-h-[200px] p-6 rounded-xl border" style={{ backgroundColor: 'rgba(205,133,63,0.05)', borderColor: 'rgba(205,133,63,0.2)' }}>
-                              <Hammer size={32} color="#CD853F" className="mb-2 opacity-50" />
-                              <p className="subtext m-0 text-sm">No workshop handovers pending.</p>
-                          </div>
-                      ) : (
-                          tomorrowHandovers.map(o => {
-                              const isOverdue = o.handover_target_date?.split('T')[0] <= today;
-                              return (
-                                  <div 
-                                      key={`hand-${o.id}`} 
-                                      className="flex justify-between items-center p-3.5 mb-3 rounded-xl border transition-all shadow-sm group hover:-translate-y-1 hover:shadow-lg" 
-                                      style={{ backgroundColor: isOverdue ? 'rgba(244, 63, 94, 0.25)' : 'rgba(25,18,15,0.6)', borderColor: isOverdue ? 'rgba(244, 63, 94, 0.8)' : 'rgba(205,133,63,0.2)', boxShadow: isOverdue ? '0 0 15px rgba(244, 63, 94, 0.25)' : 'none', backdropFilter: 'blur(5px)' }} 
-                                      onMouseEnter={(e) => {if(!isOverdue) e.currentTarget.style.backgroundColor = 'rgba(205,133,63,0.1)'}} 
-                                      onMouseLeave={(e) => {if(!isOverdue) e.currentTarget.style.backgroundColor = 'rgba(25,18,15,0.6)'}}
-                                  >
-                                     <div className="flex items-start gap-4 w-full">
-                                         <button 
-                                            onClick={() => !o.workshop_done && handleHandoverCheckboxClick(o)}
-                                            style={{ width: '24px', height: '24px', minWidth: '24px' }}
-                                            className={`mt-0.5 rounded flex items-center justify-center border-2 transition-all ${o.workshop_done ? 'bg-[#CD853F] border-[#CD853F] scale-105 shadow-[0_0_10px_rgba(205,133,63,0.5)]' : 'border-[#CD853F] hover:bg-[rgba(205,133,63,0.2)] hover:shadow-[0_0_8px_rgba(205,133,63,0.3)]'}`}
-                                         >
-                                            {Boolean(o.workshop_done) && <Check size={14} color="#fff" strokeWidth={3} />}
-                                         </button>
-                                         <div className="flex-1 flex flex-col gap-1.5">
-                                             <div className="flex justify-between items-center">
-                                                 <span className="font-bold text-white text-[15px] tracking-wide" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>{o.customer_name}</span>
-                                                 {isOverdue && <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[var(--danger)] bg-opacity-20 text-[var(--danger)] uppercase tracking-wider border border-[var(--danger)] border-opacity-30">Overdue</span>}
-                                             </div>
-                                             <div className="flex flex-wrap items-center gap-3 text-xs subtext font-medium">
-                                                 <span className="px-2 py-0.5 rounded text-[#F0A550] border border-[#CD853F] border-opacity-30" style={{ backgroundColor: 'rgba(205,133,63,0.05)' }}>{o.id}</span>
-                                                 <span className="flex items-center gap-1 text-[#F0A550]"><Calendar size={12}/> {new Date(o.handover_target_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
-                                             </div>
-                                             {o.partial_handover_note && !o.workshop_done && (
-                                                 <div className="text-[11px] text-[#F0A550] mt-1 p-1.5 rounded flex items-center gap-1 border border-[#CD853F] border-opacity-30" style={{ backgroundColor: 'rgba(205,133,63,0.08)' }}>
-                                                     <Activity size={10} /> Partial: {o.partial_handover_note.split('\n')[0]}
-                                                 </div>
-                                             )}
-                                         </div>
-                                         <button className="flex-shrink-0 self-center ml-2 p-2 rounded-lg transition-colors text-[#CD853F] border border-[rgba(205,133,63,0.3)] hover:border-[#F0A550] hover:bg-[#CD853F] hover:text-white group-hover:shadow-[0_0_10px_rgba(205,133,63,0.3)]" style={{ backgroundColor: 'rgba(205,133,63,0.05)' }} onClick={() => {
-                                             let f = 'All';
-                                             if (o.status === 'Ready for Trial' || o.status === 'Ready for trial') f = 'Ready for trial';
-                                             else if (o.status === 'In Workshop' || o.status === 'In workshop') f = 'In workshop';
-                                             navigate('/all-orders', { state: { filter: f, search: o.id } });
-                                         }} title="View Order">
-                                             <ArrowRight size={16} />
-                                         </button>
-                                     </div>
+                      return (
+                          <>
+                              {pendingHandovers.length === 0 ? (
+                                  <div className="flex flex-col items-center justify-center h-full min-h-[150px] p-6 rounded-xl border border-[var(--border-color)]" style={{ backgroundColor: 'var(--surface-light)' }}>
+                                      <Hammer size={28} color="var(--text-secondary)" className="mb-2 opacity-50" />
+                                      <p className="subtext m-0 text-sm">No workshop handovers pending.</p>
                                   </div>
-                              );
-                          })
+                              ) : (
+                                  pendingHandovers.map(o => {
+                                      const isOverdue = o.handover_target_date?.split('T')[0] <= today;
+                                      return (
+                                          <div 
+                                              key={`hand-${o.id}`} 
+                                              className="flex justify-between items-center p-3.5 mb-3 rounded-xl border transition-all shadow-sm group hover:-translate-y-1 hover:shadow-md" 
+                                              style={{ backgroundColor: isOverdue ? 'rgba(239, 68, 68, 0.08)' : 'var(--surface-light)', borderColor: isOverdue ? 'rgba(239, 68, 68, 0.4)' : 'var(--border-color)' }}
+                                          >
+                                             <div className="flex items-start gap-4 w-full">
+                                                 <button 
+                                                    onClick={() => handleHandoverCheckboxClick(o)}
+                                                    style={{ width: '22px', height: '22px', minWidth: '22px', border: '2px solid var(--accent-gold)' }}
+                                                    className="mt-0.5 rounded flex items-center justify-center bg-transparent hover:bg-var(--accent-gold-dim) transition-all"
+                                                 >
+                                                 </button>
+                                                 <div className="flex-1 flex flex-col gap-1.5">
+                                                     <div className="flex justify-between items-center">
+                                                         <span className="font-bold text-[var(--text-primary)] text-[14px] tracking-wide">{o.customer_name}</span>
+                                                         {isOverdue && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[var(--danger)] bg-opacity-10 text-[var(--danger)] uppercase tracking-wider border border-[var(--danger)] border-opacity-20">Overdue</span>}
+                                                     </div>
+                                                     <div className="flex flex-wrap items-center gap-3 text-xs subtext font-medium">
+                                                         <span className="px-2 py-0.5 rounded text-[var(--accent-gold)] border border-[var(--border-color)]" style={{ backgroundColor: 'var(--surface-color)' }}>{o.id}</span>
+                                                         <span className="flex items-center gap-1 text-[var(--text-secondary)]"><Calendar size={12}/> {new Date(o.handover_target_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                                                     </div>
+                                                     {o.partial_handover_note && (
+                                                         <div className="text-[11px] text-[var(--accent-gold)] mt-1 p-1.5 rounded flex items-center gap-1 border border-[var(--border-color)]" style={{ backgroundColor: 'var(--surface-color)' }}>
+                                                             <Activity size={10} /> Partial: {o.partial_handover_note.split('\n')[0]}
+                                                         </div>
+                                                     )}
+                                                 </div>
+                                                 <button className="flex-shrink-0 self-center ml-2 p-2 rounded-lg transition-colors text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--accent-gold)] hover:bg-[var(--accent-gold)] hover:text-white" onClick={() => {
+                                                     navigate('/all-orders', { state: { filter: 'All', search: o.id } });
+                                                 }} title="View Order">
+                                                     <ArrowRight size={14} />
+                                                 </button>
+                                             </div>
+                                          </div>
+                                      );
+                                  })
+                              )}
+
+                              {/* Completed Handovers Section */}
+                              {completedHandovers.length > 0 && (
+                                  <div className="mt-4">
+                                      <button 
+                                          onClick={() => setShowCompletedHandovers(!showCompletedHandovers)}
+                                          className="flex items-center gap-2 text-sm text-[var(--accent-gold)] mb-3 w-full text-left focus:outline-none"
+                                      >
+                                          {showCompletedHandovers ? '▼' : '▶'} Show Completed Handovers ({completedHandovers.length})
+                                      </button>
+                                      
+                                      {showCompletedHandovers && completedHandovers.map(o => (
+                                          <div key={`hand-comp-${o.id}`} className="flex justify-between items-center p-3.5 mb-3 rounded-xl border border-[var(--border-color)]" style={{ backgroundColor: 'var(--surface-light)' }}>
+                                             <div className="flex items-start gap-4 w-full opacity-60 hover:opacity-100 transition-opacity">
+                                                 <button 
+                                                    onClick={() => handleUndoHandover(o.id)}
+                                                    style={{ width: '22px', height: '22px', minWidth: '22px', backgroundColor: 'var(--success)', border: 'none' }}
+                                                    className="mt-0.5 rounded flex items-center justify-center"
+                                                    title="Undo Handover"
+                                                 >
+                                                    <Check size={12} color="#fff" strokeWidth={3} />
+                                                 </button>
+                                                 <div className="flex-1 flex flex-col gap-1.5" style={{ textDecoration: 'line-through' }}>
+                                                     <div className="flex justify-between items-center">
+                                                         <span className="font-bold text-[var(--text-primary)] text-[14px] tracking-wide">{o.customer_name}</span>
+                                                     </div>
+                                                     <div className="flex flex-wrap items-center gap-3 text-xs subtext font-medium">
+                                                         <span className="px-2 py-0.5 rounded text-[var(--text-secondary)] border border-[var(--border-color)]">{o.id}</span>
+                                                     </div>
+                                                 </div>
+                                             </div>
+                                          </div>
+                                      ))}
+                                  </div>
+                              )}
+                          </>
                       );
                   })()}
               </div>
@@ -752,7 +960,7 @@ const Dashboard = () => {
 
       {/* PROACTIVE ALERTS (FLOATING UI) */}
       {proactiveAlerts.length > 0 && (
-          <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 50, display: 'flex', flexDirection: 'column', gap: '15px', width: '320px' }}>
+          <div style={{ position: 'fixed', bottom: '30px', right: '20px', zIndex: 50, display: 'flex', flexDirection: 'column', gap: '15px', width: 'calc(100vw - 40px)', maxWidth: '320px' }}>
               {proactiveAlerts.map(alert => (
                   <div key={alert.id} className="glass-panel" style={{ padding: '16px', position: 'relative', borderLeft: `4px solid ${alert.type === 'birthday' ? '#ff6b6b' : '#feca57'}`, boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
                       <button 
@@ -806,7 +1014,7 @@ const Dashboard = () => {
                   <div className="modal-body">
                       <p className="mb-4">Does remaining payment clear? (Due: ₹{deliverySelectedOrder.balance_due})</p>
                       
-                      <div className="flex gap-2 mb-4">
+                      <div className="flex flex-wrap gap-2 mb-4">
                           <button className={`btn-${deliverySettleType === 'Yes' ? 'primary' : 'secondary'} flex-1`} onClick={() => setDeliverySettleType('Yes')}>Yes</button>
                           <button className={`btn-${deliverySettleType === 'No' ? 'primary' : 'secondary'} flex-1`} onClick={() => setDeliverySettleType('No')}>No</button>
                           <button className={`btn-${deliverySettleType === 'Partially' ? 'primary' : 'secondary'} flex-1`} onClick={() => setDeliverySettleType('Partially')}>Partially</button>
@@ -848,7 +1056,7 @@ const Dashboard = () => {
                   <div className="modal-body">
                       <p className="mb-4">All pcs is done?</p>
                       
-                      <div className="flex gap-2 mb-4">
+                      <div className="flex flex-wrap gap-2 mb-4">
                           <button className={`btn-${handoverType === 'Yes' ? 'primary' : 'secondary'} flex-1`} onClick={() => setHandoverType('Yes')}>Yes</button>
                           <button className={`btn-${handoverType === 'No' ? 'primary' : 'secondary'} flex-1`} onClick={() => setHandoverType('No')}>No</button>
                           <button className={`btn-${handoverType === 'Partially' ? 'primary' : 'secondary'} flex-1`} onClick={() => setHandoverType('Partially')}>Partially</button>
@@ -872,26 +1080,26 @@ const Dashboard = () => {
                                   <strong>Order Split Mode:</strong> This order will be split. The items that are done will stay on the current delivery date. A new sub-order will be created for the pending items with new dates.
                               </div>
                               <div>
-                                  <label className="form-label">Which items ARE done ?</label>
+                                  <label className="form-label">Which items ARE done?</label>
                                   <input 
                                       type="text" 
                                       className="form-input" 
                                       value={handoverPartialText}
                                       onChange={e => setHandoverPartialText(e.target.value)}
-                                      placeholder="e.g. 1 Pant, 1 Shirt"
+                                      placeholder="e.g. 2 Burners, 1 Prep Table"
                                   />
                               </div>
                               <div>
-                                  <label className="form-label">Which items are PENDING ?</label>
+                                  <label className="form-label">Which items are PENDING?</label>
                                   <input 
                                       type="text" 
                                       className="form-input" 
                                       value={handoverPendingText}
                                       onChange={e => setHandoverPendingText(e.target.value)}
-                                      placeholder="e.g. 1 Coat"
+                                      placeholder="e.g. 1 Exhaust Hood"
                                   />
                               </div>
-                              <div className="grid grid-cols-2 gap-3">
+                              <div className="flex flex-col gap-3">
                                 <div>
                                     <label className="form-label">New Handover Date:</label>
                                     <input 

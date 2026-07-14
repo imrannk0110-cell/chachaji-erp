@@ -1,9 +1,9 @@
 {
-  "short_name": "Humjoli ERP",
-  "name": "Humjoli Safa ERP & CRM",
+  "short_name": "Chachaji ERP",
+  "name": "Chachaji Udyog ERP & CRM",
   "icons": [
     {
-      "src": "/humjolilogo.png",
+      "src": "/Chachaji%20Udyog%20Logo.png",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "any maskable"

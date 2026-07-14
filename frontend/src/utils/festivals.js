@@ -1,7 +1,7 @@
 export const festivalsData = [
   {
     "name": "Test Festival Today",
-    "date": "2026-06-26",
+    "date": "2026-07-02",
     "targetFaith": "Hindu"
   },
   {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Image as ImageIcon, IndianRupee, Store, TrendingDown, ArrowRightLeft, X, FileText, CheckCircle, Banknote, Filter } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
+import Select from 'react-select';
 
 const SupplierLedger = () => {
   const location = useLocation();
@@ -36,8 +37,8 @@ const SupplierLedger = () => {
   // Purchase Form State
   const [invoiceForm, setInvoiceForm] = useState({ invoice_no: '', date: new Date().toISOString().split('T')[0], advance_amount: '', payment_mode: 'Cash' });
   const [thaans, setThaans] = useState([
-    { sku_takano: '', article_name: '', shade_id: '', total_meters: '', purchase_rate: '', gst_percentage: '5', shade_image: null, landing_cost: 0 }
-  ]);
+    { sku_takano: '', article_name: '', shade_id: '', total_meters: '', purchase_rate: '', gst_percentage: '18', shade_image: null, landing_cost: 0 }
+  ]); // Note: field names kept same for API compatibility, only UI labels changed
 
   const handleSaveNewSupplier = async (e) => {
     e.preventDefault();
@@ -63,7 +64,18 @@ const SupplierLedger = () => {
 
   useEffect(() => {
     fetchSuppliers();
+    fetchNextInvoiceNo();
   }, []);
+
+  const fetchNextInvoiceNo = async () => {
+    try {
+      const res = await fetch('/api/supplier_ledger/next-invoice-no');
+      const data = await res.json();
+      if (data.next_invoice_no) {
+        setInvoiceForm(prev => ({ ...prev, invoice_no: data.next_invoice_no }));
+      }
+    } catch(e) { console.error('Could not fetch next invoice no', e); }
+  };
 
   const fetchSuppliers = async () => {
     const res = await fetch('/api/suppliers');
@@ -77,16 +89,14 @@ const SupplierLedger = () => {
     setLedger(data);
   };
 
-  const handleSupplierSearchChange = (e) => {
-    const val = e.target.value;
-    setSupplierSearchText(val);
-
-    const match = suppliers.find(s => `${s.name} (GST: ${s.gstin || 'N/A'})` === val);
-    if (match) {
-      setSelectedSupplierId(match.id);
-      fetchLedger(match.id);
+  const onSupplierSelect = (supplierId, supplierLabel) => {
+    if (supplierId) {
+      setSelectedSupplierId(supplierId);
+      setSupplierSearchText(supplierLabel);
+      fetchLedger(supplierId);
     } else {
       setSelectedSupplierId('');
+      setSupplierSearchText('');
       setLedger([]);
     }
   };
@@ -95,7 +105,7 @@ const SupplierLedger = () => {
   // Purchase View Logic
   // ----------------------------------------------------
   const handleAddThaan = () => {
-    setThaans([...thaans, { sku_takano: '', article_name: '', shade_id: '', total_meters: '', purchase_rate: '', gst_percentage: '5', shade_image: null, landing_cost: 0 }]);
+    setThaans([...thaans, { sku_takano: '', article_name: '', shade_id: '', total_meters: '', purchase_rate: '', gst_percentage: '18', shade_image: null, landing_cost: 0 }]);
   };
 
   const handleRemoveThaan = (index) => {
@@ -143,9 +153,9 @@ const SupplierLedger = () => {
 
   const calculateInvoiceTotal = () => {
     return thaans.reduce((acc, thaan) => {
-      const m = parseFloat(thaan.total_meters) || 0;
+      const qty = parseFloat(thaan.total_meters) || 0; // total_meters field used for quantity
       const lc = parseFloat(thaan.landing_cost) || 0;
-      return acc + (m * lc);
+      return acc + (qty * lc);
     }, 0);
   };
 
@@ -155,7 +165,7 @@ const SupplierLedger = () => {
     
     for(let i=0; i<thaans.length; i++) {
         if(thaans[i].shade_id && thaans[i].shade_id.length > 7) {
-            return alert(`Row ${i+1}: Shade ID max 7 chars.`);
+            return alert(`Row ${i+1}: Category max 7 chars.`);
         }
     }
 
@@ -218,8 +228,8 @@ const SupplierLedger = () => {
       }
 
       alert('Purchase Invoice Recorded Successfully!');
-      setInvoiceForm({ invoice_no: '', date: new Date().toISOString().split('T')[0], advance_amount: '', payment_mode: 'Cash' });
-      setThaans([{ sku_takano: '', article_name: '', shade_id: '', total_meters: '', purchase_rate: '', gst_percentage: '5', shade_image: null, landing_cost: 0 }]);
+      fetchNextInvoiceNo();  // Auto-set next invoice number
+      setThaans([{ sku_takano: '', article_name: '', shade_id: '', total_meters: '', purchase_rate: '', gst_percentage: '18', shade_image: null, landing_cost: 0 }]);
       setView('STATEMENT');
       fetchLedger(selectedSupplierId);
 
@@ -282,7 +292,7 @@ const SupplierLedger = () => {
       <div className={!isMobile ? "flex justify-between items-end mb-6" : "flex flex-col gap-4 mb-6"}>
         <div>
           <h1 style={{ margin: 0, fontSize: isMobile ? '1.8rem' : '2.5rem' }}>Supplier Operations</h1>
-          <p className="subtext" style={{ fontSize: isMobile ? '0.9rem' : '1rem' }}>Manage purchases, ledgers, and textile stock entries.</p>
+          <p className="subtext" style={{ fontSize: isMobile ? '0.9rem' : '1rem' }}>Manage purchases, ledgers, and raw material / parts inventory.</p>
         </div>
         
         <div className="flex gap-2">
@@ -307,19 +317,39 @@ const SupplierLedger = () => {
       <div className={`card mb-6 flex ${isMobile ? 'flex-col' : 'items-center'} gap-4 shadow-lg`} style={{ border: '1px solid var(--accent-gold)', padding: isMobile ? '1rem' : '1.5rem' }}>
         <div className="form-group mb-0 flex-1 w-full">
           <label className="form-label" style={{ color: 'var(--accent-gold)', fontSize: isMobile ? '0.85rem' : '1rem' }}>Active Supplier Profile</label>
-          <input 
-            list="suppliers-list"
-            value={supplierSearchText}
-            onChange={handleSupplierSearchChange}
+          <Select
+            options={suppliers.map(s => ({ value: s.id, label: `${s.name} (GST: ${s.gstin || 'N/A'})` }))}
+            value={selectedSupplierId ? { value: selectedSupplierId, label: supplierSearchText } : null}
+            onChange={selected => onSupplierSelect(selected ? selected.value : '', selected ? selected.label : '')}
             placeholder="-- Search or Select Supplier Account --"
-            className="w-full"
-            style={{ backgroundColor: 'var(--bg-color)', padding: '0.6rem 1rem', fontSize: isMobile ? '0.9rem' : '1rem' }}
+            isSearchable
+            isClearable
+            styles={{
+              control: (base) => ({
+                ...base,
+                minHeight: '44px',
+                backgroundColor: 'var(--bg-color)',
+                borderColor: 'var(--border-color)',
+                borderRadius: '6px',
+                boxShadow: 'none',
+                '&:hover': { borderColor: 'var(--accent-gold)' }
+              }),
+              singleValue: (base) => ({ ...base, color: 'var(--text-primary)' }),
+              input: (base) => ({ ...base, color: 'var(--text-primary)' }),
+              menu: (base) => ({ ...base, backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)', zIndex: 10 }),
+              option: (base, state) => ({
+                ...base,
+                backgroundColor: state.isSelected 
+                  ? 'var(--accent-gold)' 
+                  : (state.isFocused ? 'var(--surface-lighter)' : 'transparent'),
+                color: state.isSelected ? 'var(--accent-text)' : 'var(--text-primary)',
+                cursor: 'pointer'
+              }),
+              placeholder: (base) => ({ ...base, color: 'var(--text-secondary)' })
+            }}
           />
-          <datalist id="suppliers-list">
-            {suppliers.map(s => <option key={s.id} value={`${s.name} (GST: ${s.gstin || 'N/A'})`} />)}
-          </datalist>
         </div>
-        <div className={`flex gap-2 w-full ${!isMobile ? 'mt-4 w-auto' : ''}`}>
+        <div className={`flex gap-2 ${isMobile ? 'w-full mt-4' : 'mt-0'}`}>
           <button className="btn-secondary flex-1 justify-center flex items-center" onClick={() => setShowNewSupplierModal(true)} style={{ padding: isMobile ? '0.6rem' : '' }}>
             <Plus size={16} style={{marginRight:'4px'}}/> New
           </button>
@@ -339,9 +369,7 @@ const SupplierLedger = () => {
           <div className="grid grid-cols-3 gap-4">
              {suppliers.filter(s => parseFloat(s.net_outstanding || 0) > 0).map(s => (
                  <button key={s.id} className="btn-secondary flex flex-col items-start p-4" onClick={() => {
-                      setSupplierSearchText(`${s.name} (GST: ${s.gstin || 'N/A'})`);
-                      setSelectedSupplierId(s.id);
-                      fetchLedger(s.id);
+                      onSupplierSelect(s.id, `${s.name} (GST: ${s.gstin || 'N/A'})`);
                  }}>
                      <span className="font-bold">{s.name}</span>
                      <span className="text-[var(--danger)] text-sm">Owe: ₹{parseFloat(s.net_outstanding || 0).toLocaleString()}</span>
@@ -402,38 +430,38 @@ const SupplierLedger = () => {
              </div>
           </div>
 
-          <h3 className="mb-4">Thaan Entry</h3>
+          <h3 className="mb-4">Item / Material Entry</h3>
           
           <div className="table-wrapper mb-6">
             <table style={{ minWidth: '1000px' }}>
               <thead>
                 <tr>
-                  <th style={{ width: '120px' }}>Takano/SKU</th>
-                  <th style={{ width: '150px' }}>Article Name</th>
-                  <th style={{ width: '100px' }}>Shade ID</th>
-                  <th style={{ width: '90px' }}>Meters</th>
-                  <th style={{ width: '110px' }}>Price/Mtr</th>
-                  <th style={{ width: '80px' }}>GST %</th>
+                  <th style={{ width: '120px' }}>SKU / Part No.</th>
+                  <th style={{ width: '160px' }}>Item / Material Name</th>
+                  <th style={{ width: '100px' }}>Category</th>
+                  <th style={{ width: '90px' }}>Qty (Pcs)</th>
+                  <th style={{ width: '110px' }}>Unit Price (₹)</th>
+                  <th style={{ width: '80px', textAlign: 'center' }}>GST (18%)</th>
                   <th style={{ width: '130px' }}>Landing Cost</th>
-                  <th style={{ width: '120px' }}>Shade Photo</th>
+                  <th style={{ width: '120px' }}>Item Photo</th>
                   <th style={{ width: '50px' }}></th>
                 </tr>
               </thead>
               <tbody>
                 {thaans.map((thaan, i) => (
                   <tr key={i}>
-                    <td><input type="text" placeholder="SKU" value={thaan.sku_takano} onChange={e=>handleThaanChange(i, 'sku_takano', e.target.value)} className="w-full" style={{ padding: '0.4rem', fontSize: '0.8rem' }} /></td>
-                    <td><input type="text" placeholder="e.g. GOLDEE TR" value={thaan.article_name} onChange={e=>handleThaanChange(i, 'article_name', e.target.value)} className="w-full" style={{ padding: '0.4rem', fontSize: '0.8rem' }} /></td>
-                    <td><input type="text" placeholder="ID" maxLength="7" value={thaan.shade_id} onChange={e=>handleThaanChange(i, 'shade_id', e.target.value)} className="w-full" style={{ padding: '0.4rem', fontSize: '0.8rem' }} /></td>
-                    <td><input type="number" placeholder="0.0" step="0.1" value={thaan.total_meters} onChange={e=>handleThaanChange(i, 'total_meters', e.target.value)} className="w-full" style={{ padding: '0.4rem', fontSize: '0.8rem' }} /></td>
+                    <td><input type="text" placeholder="e.g. BRN-001" value={thaan.sku_takano} onChange={e=>handleThaanChange(i, 'sku_takano', e.target.value)} className="w-full" style={{ padding: '0.4rem', fontSize: '0.8rem' }} /></td>
+                    <td><input type="text" placeholder="e.g. Brass Burner Head" value={thaan.article_name} onChange={e=>handleThaanChange(i, 'article_name', e.target.value)} className="w-full" style={{ padding: '0.4rem', fontSize: '0.8rem' }} /></td>
+                    <td><input type="text" placeholder="Category" maxLength="7" value={thaan.shade_id} onChange={e=>handleThaanChange(i, 'shade_id', e.target.value)} className="w-full" style={{ padding: '0.4rem', fontSize: '0.8rem' }} /></td>
+                    <td><input type="number" placeholder="0" step="1" value={thaan.total_meters} onChange={e=>handleThaanChange(i, 'total_meters', e.target.value)} className="w-full" style={{ padding: '0.4rem', fontSize: '0.8rem' }} /></td>
                     <td><input type="number" placeholder="₹" value={thaan.purchase_rate} onChange={e=>handleThaanChange(i, 'purchase_rate', e.target.value)} className="w-full" style={{ padding: '0.4rem', fontSize: '0.8rem' }} /></td>
-                    <td>
-                      <select value={thaan.gst_percentage} onChange={e=>handleThaanChange(i, 'gst_percentage', e.target.value)} className="w-full" style={{ padding: '0.4rem', fontSize: '0.8rem' }}>
-                        <option value="0">0%</option>
-                        <option value="5">5%</option>
-                        <option value="12">12%</option>
-                        <option value="18">18%</option>
-                      </select>
+                    <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={thaan.gst_percentage === '18'} 
+                        onChange={e => handleThaanChange(i, 'gst_percentage', e.target.checked ? '18' : '0')} 
+                        style={{ width: '18px', height: '18px', cursor: 'pointer', margin: '0 auto' }} 
+                      />
                     </td>
                     <td>
                       <div style={{ padding: '0.4rem', backgroundColor: 'var(--surface-color)', borderRadius: '4px', textAlign: 'center', fontWeight: 'bold', color: 'var(--accent-gold)' }}>
@@ -447,7 +475,7 @@ const SupplierLedger = () => {
                            <ImageIcon size={16} />
                         </label>
                         {thaan.shade_image && (
-                          <img src={thaan.shade_image} alt="shade" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '50%', border: '2px solid var(--accent-gold)' }} />
+                          <img src={thaan.shade_image} alt="item" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '50%', border: '2px solid var(--accent-gold)' }} />
                         )}
                       </div>
                     </td>
@@ -464,7 +492,7 @@ const SupplierLedger = () => {
 
           <div className="flex justify-between items-center mt-6">
             <button className="btn-secondary flex items-center gap-2" onClick={handleAddThaan}>
-              <Plus size={16} /> Add Thaan Row
+              <Plus size={16} /> Add Item Row
             </button>
             <button className="btn-primary flex items-center gap-2" style={{ padding: '0.75rem 2rem' }} onClick={handleSavePurchase}>
               <CheckCircle size={18} /> Save Complete Purchase Invoice
@@ -607,7 +635,7 @@ const SupplierLedger = () => {
             <form onSubmit={handleSaveNewSupplier}>
               <div className="form-group">
                 <label className="form-label">Supplier/Business Name *</label>
-                <input type="text" required value={newSupplierForm.name} onChange={e=>setNewSupplierForm({...newSupplierForm, name: e.target.value})} className="w-full" placeholder="e.g. OCM FAB TEX" />
+                <input type="text" required value={newSupplierForm.name} onChange={e=>setNewSupplierForm({...newSupplierForm, name: e.target.value})} className="w-full" placeholder="e.g. Aggarwal Metal Works" />
               </div>
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div className="form-group mb-0">
@@ -641,17 +669,17 @@ const SupplierLedger = () => {
               <X size={20} />
             </button>
             <h2 className="mb-2">Invoice: <span style={{ color: 'var(--accent-gold)' }}>{selectedInvoice}</span></h2>
-            <p className="subtext mb-6">Details of all Thaans purchased in this bill.</p>
+            <p className="subtext mb-6">Details of all Items/Materials purchased in this bill.</p>
 
             <div className="table-wrapper">
               <table>
                 <thead>
                   <tr>
                     <th>Photo</th>
-                    <th>Takano / SKU</th>
-                    <th>Article Name</th>
-                    <th>Shade</th>
-                    <th>Meters</th>
+                    <th>SKU / Part No.</th>
+                    <th>Item / Material Name</th>
+                    <th>Category</th>
+                    <th>Qty (Pcs)</th>
                     <th>Landing Cost</th>
                   </tr>
                 </thead>
@@ -660,7 +688,7 @@ const SupplierLedger = () => {
                     <tr key={t.id}>
                       <td>
                         {t.shade_image ? (
-                           <img src={t.shade_image} alt="shade" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} />
+                           <img src={t.shade_image} alt="item" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} />
                         ) : (
                            <div style={{ width: '40px', height: '40px', backgroundColor: 'var(--surface-color)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                              <ImageIcon size={16} color="var(--text-secondary)" />
@@ -670,12 +698,12 @@ const SupplierLedger = () => {
                       <td style={{ fontWeight: '500' }}>{t.sku_takano || 'N/A'}</td>
                       <td>{t.article_name || 'N/A'}</td>
                       <td><span className="badge">{t.shade_id}</span></td>
-                      <td>{t.total_meters} m</td>
-                      <td style={{ color: 'var(--accent-gold)', fontWeight: 'bold' }}>₹{t.landing_cost.toFixed(2)}/m</td>
+                      <td>{t.total_meters} Pcs</td>
+                      <td style={{ color: 'var(--accent-gold)', fontWeight: 'bold' }}>₹{t.landing_cost.toFixed(2)}/Pc</td>
                     </tr>
                   ))}
                   {invoiceThaans.length === 0 && (
-                    <tr><td colSpan="5" className="text-center p-4 subtext">No Thaan records found for this invoice.</td></tr>
+                    <tr><td colSpan="6" className="text-center p-4 subtext">No item records found for this invoice.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -704,3 +732,6 @@ const SupplierLedger = () => {
 };
 
 export default SupplierLedger;
+
+
+

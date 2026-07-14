@@ -9,14 +9,23 @@ import Customers from './pages/Customers';
 import Inventory from './pages/Inventory';
 import AllOrders from './pages/AllOrders';
 import Analytics from './pages/Analytics';
-
 import Daybook from './pages/Daybook';
+import Catalog from './pages/Catalog';
+import Admin from './pages/Admin';
+import PasscodeLock from './components/PasscodeLock';
+import ProductDetail from './pages/ProductDetail';
 
 function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<Layout />}>
+        {/* Public Routes */}
+        <Route path="/" element={<Catalog />} />
+        <Route path="/product/:id" element={<ProductDetail />} />
+        <Route path="/admin" element={<PasscodeLock><Admin /></PasscodeLock>} />
+
+        {/* Internal ERP Dashboard Routes */}
+        <Route path="/dashboard" element={<PasscodeLock><Layout /></PasscodeLock>}>
           <Route index element={<Dashboard />} />
           <Route path="new-order" element={<NewOrder />} />
           <Route path="workshop" element={<Workshop />} />
