@@ -612,10 +612,10 @@ const Catalog = () => {
           .mobile-nav-sub-item:hover { color: #1B0A64; background: #FFFFFF; }
           
           /* Hero Mobile Adjustments */
-          .hero-section { height: auto !important; min-height: 550px !important; }
-          .hero-split-container { flex-direction: column !important; }
+          .hero-section { height: auto !important; min-height: 550px !important; padding-bottom: 2rem; }
+          .hero-split-container { flex-direction: column-reverse !important; }
           .hero-left-half { 
-            padding: 3rem 1.5rem !important; 
+            padding: 2rem 1.5rem 1rem 1.5rem !important; 
             text-align: center !important; 
             align-items: center !important;
           }
@@ -624,12 +624,14 @@ const Catalog = () => {
           .hero-left-half div { justify-content: center !important; }
           .hero-right-half { 
             min-height: 250px !important; 
+            flex: 0 0 250px !important;
           }
           .hero-right-half > div {
-            top: 0 !important; bottom: 5% !important; right: 5% !important; left: 5% !important;
+            top: 15px !important; bottom: 0 !important; right: 5% !important; left: 5% !important;
           }
-          .hero-title { font-size: 2.4rem !important; line-height: 1.2 !important; }
-          .hero-desc { font-size: 1rem !important; }
+          .hero-title { font-size: 2.2rem !important; line-height: 1.2 !important; }
+          .hero-desc { font-size: 1rem !important; margin-bottom: 2rem !important; }
+          .hero-indicators { top: 240px !important; bottom: auto !important; }
           
           .search-bar-wrapper { padding: 4px 4px 4px 1rem !important; }
           .search-bar-input { font-size: 0.9rem !important; }
@@ -877,7 +879,7 @@ const Catalog = () => {
         ))}
 
         {/* Slide Indicators */}
-        <div style={{
+        <div className="hero-indicators" style={{
           position: 'absolute',
           bottom: '25px',
           left: '50%',
