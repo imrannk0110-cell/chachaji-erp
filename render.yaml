@@ -3,7 +3,7 @@ services:
     name: chachaji-erp
     env: node
     buildCommand: npm run build
-    startCommand: npm start
+    startCommand: npm run start:backend
     envVars:
       - key: NODE_ENV
         value: production
