@@ -7,7 +7,7 @@
     "build": "cd frontend && npm install --include=dev && npm run build && cd ../backend && npm install",
     "dev": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
     "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
-    "start:backend": "cd backend && node server.js",
+    "start:backend": "cd backend && node seed_if_empty.js && node server.js",
     "start:frontend": "cd frontend && npm run dev"
   },
   "keywords": [],

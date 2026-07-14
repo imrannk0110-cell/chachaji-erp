@@ -51,15 +51,15 @@ const customersData = [
 ];
 
 const productsData = [
-  { sku: 'ST-001', name: 'Single Stove Burner (Stainless Steel)', category: 'Single Stove Burner - SS', subcategory: 'Steel Body', total_stock: 45, manufacturing_cost: 450, retail_price: 850, wholesale_price: 650 },
-  { sku: 'ST-001-MS', name: 'Single Stove Burner (Iron Body)', category: 'Single Stove Burner - Iron (MS)', subcategory: 'Iron Body', total_stock: 25, manufacturing_cost: 380, retail_price: 720, wholesale_price: 550 },
-  { sku: 'ST-002', name: 'Double Stove Burner (Glass Top)', category: 'Double Stove Burner', subcategory: 'Glass Top', total_stock: 30, manufacturing_cost: 1100, retail_price: 2200, wholesale_price: 1650 },
-  { sku: 'ST-003', name: 'Three Stove Burner (Platform)', category: 'Three Stove Burner', subcategory: 'Stainless Steel', total_stock: 20, manufacturing_cost: 1650, retail_price: 3200, wholesale_price: 2450 },
-  { sku: 'ST-004', name: 'Four Stove Burner (Crustal MC-423)', category: 'Four Stove Burner', subcategory: 'Glass Premium', total_stock: 15, manufacturing_cost: 2500, retail_price: 4800, wholesale_price: 3600 },
-  { sku: 'CM-001', name: 'High Pressure Commercial Bhatti 12x12', category: 'Commercial Burner', subcategory: 'Gas Bhatti', total_stock: 12, manufacturing_cost: 1800, retail_price: 3500, wholesale_price: 2700 },
-  { sku: 'CM-002', name: 'Dosa Bhatti 17x41 Stand Steel', category: 'Commercial Burner', subcategory: 'Stand Steel', total_stock: 8, manufacturing_cost: 4200, retail_price: 8500, wholesale_price: 6800 },
-  { sku: 'RG-001', name: 'F-Type Gas Regulator', category: 'Regulator', subcategory: 'Regulators', total_stock: 120, manufacturing_cost: 90, retail_price: 250, wholesale_price: 150 },
-  { sku: 'SP-001', name: 'T-35 Burner Head (Heavy Brass)', category: 'Spare Parts', subcategory: 'Burner Heads', total_stock: 85, manufacturing_cost: 180, retail_price: 450, wholesale_price: 300 }
+  { sku: 'ST-001', name: 'Single Stove Burner (Stainless Steel)', category: 'Single Stove Burner - SS', subcategory: 'Steel Body', total_stock: 45, manufacturing_cost: 450, retail_price: 850, wholesale_price: 650, image: '/single_stove_burner.png' },
+  { sku: 'ST-001-MS', name: 'Single Stove Burner (Iron Body)', category: 'Single Stove Burner - Iron (MS)', subcategory: 'Iron Body', total_stock: 25, manufacturing_cost: 380, retail_price: 720, wholesale_price: 550, image: '/single_stove_burner.png' },
+  { sku: 'ST-002', name: 'Double Stove Burner (Glass Top)', category: 'Double Stove Burner', subcategory: 'Glass Top', total_stock: 30, manufacturing_cost: 1100, retail_price: 2200, wholesale_price: 1650, image: '/double_stove_burner.png' },
+  { sku: 'ST-003', name: 'Three Stove Burner (Platform)', category: 'Three Stove Burner', subcategory: 'Stainless Steel', total_stock: 20, manufacturing_cost: 1650, retail_price: 3200, wholesale_price: 2450, image: '/three_stove_burner.png' },
+  { sku: 'ST-004', name: 'Four Stove Burner (Crustal MC-423)', category: 'Four Stove Burner', subcategory: 'Glass Premium', total_stock: 15, manufacturing_cost: 2500, retail_price: 4800, wholesale_price: 3600, image: '/four_stove_burner.png' },
+  { sku: 'CM-001', name: 'High Pressure Commercial Bhatti 12x12', category: 'Commercial Burner', subcategory: 'Gas Bhatti', total_stock: 12, manufacturing_cost: 1800, retail_price: 3500, wholesale_price: 2700, image: '/commercial_bhatti.png' },
+  { sku: 'CM-002', name: 'Dosa Bhatti 17x41 Stand Steel', category: 'Commercial Burner', subcategory: 'Stand Steel', total_stock: 8, manufacturing_cost: 4200, retail_price: 8500, wholesale_price: 6800, image: '/dosa_bhatti.png' },
+  { sku: 'RG-001', name: 'F-Type Gas Regulator', category: 'Regulator', subcategory: 'Regulators', total_stock: 120, manufacturing_cost: 90, retail_price: 250, wholesale_price: 150, image: '/gas_regulator.png' },
+  { sku: 'SP-001', name: 'T-35 Burner Head (Heavy Brass)', category: 'Spare Parts', subcategory: 'Burner Heads', total_stock: 85, manufacturing_cost: 180, retail_price: 450, wholesale_price: 300, image: '/brass_burner_head.png' }
 ];
 
 const runQuery = (query, params = []) => {
@@ -106,8 +106,8 @@ async function seedData() {
         const supProds = productsData.filter((_, idx) => (idx % suppliersData.length) === (supplierId % suppliersData.length));
         for (let p of (supProds.length > 0 ? supProds : productsData.slice(0,2))) {
             await runQuery(
-                'INSERT INTO products (sku, name, category, subcategory, total_stock, manufacturing_cost, retail_price, wholesale_price, supplier_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [p.sku, p.name, p.category, p.subcategory, p.total_stock, p.manufacturing_cost, p.retail_price, p.wholesale_price, supplierId]
+                'INSERT INTO products (sku, name, category, subcategory, total_stock, manufacturing_cost, retail_price, wholesale_price, image, supplier_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [p.sku, p.name, p.category, p.subcategory, p.total_stock, p.manufacturing_cost, p.retail_price, p.wholesale_price, p.image || null, supplierId]
             );
         }
         
